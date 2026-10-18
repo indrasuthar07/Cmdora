@@ -1,4 +1,5 @@
 # Cmdora
+
 What if you could use your terminal without having to remember every command, flag, or combination of arguments?
 
 What if, instead of searching for the right syntax, you could simply describe what you want to accomplish?

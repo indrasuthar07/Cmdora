@@ -151,6 +151,8 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -204,6 +206,12 @@ cython_debug/
 # .vscode/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
+
+# Cmdora local state
+.Cmdora/
+*.db
+*.sqlite
+*.sqlite3
 
 # Ruff stuff:
 .ruff_cache/
