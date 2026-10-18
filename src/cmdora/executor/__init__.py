@@ -1,1 +1,5 @@
-"""PowerShell command execution (implemented in Phase 1)."""
+"""PowerShell command execution."""
+
+from cmdora.executor.powershell import ExecutionResult, PowerShellExecutor
+
+__all__ = ["ExecutionResult", "PowerShellExecutor"]
