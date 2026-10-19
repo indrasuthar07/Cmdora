@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
+from cmdora.executor.workspace import resolve_workspace
+
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_OUTPUT_CHARACTERS = 8_000
 _TRUNCATION_MARKER = "\n...[output truncated]"
@@ -47,7 +49,7 @@ class PowerShellExecutor:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         max_output_characters: int = DEFAULT_MAX_OUTPUT_CHARACTERS,
     ) -> None:
-        self.workspace_path = _resolve_workspace(workspace_path)
+        self.workspace_path = resolve_workspace(workspace_path)
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than zero")
         if max_output_characters < 0:
@@ -79,11 +81,11 @@ class PowerShellExecutor:
             )
         except subprocess.TimeoutExpired as error:
             elapsed_seconds = monotonic() - started_at
-            stdout, stdout_truncated = _truncate_output(
-                _coerce_output(error.stdout), self.max_output_characters
+            stdout, stdout_truncated = truncate_output(
+                coerce_output(error.stdout), self.max_output_characters
             )
-            stderr, stderr_truncated = _truncate_output(
-                _coerce_output(error.stderr), self.max_output_characters
+            stderr, stderr_truncated = truncate_output(
+                coerce_output(error.stderr), self.max_output_characters
             )
             return ExecutionResult(
                 command=command,
@@ -108,8 +110,8 @@ class PowerShellExecutor:
                 cancelled=True,
             )
 
-        stdout, stdout_truncated = _truncate_output(completed.stdout, self.max_output_characters)
-        stderr, stderr_truncated = _truncate_output(completed.stderr, self.max_output_characters)
+        stdout, stdout_truncated = truncate_output(completed.stdout, self.max_output_characters)
+        stderr, stderr_truncated = truncate_output(completed.stderr, self.max_output_characters)
         return ExecutionResult(
             command=command,
             workspace_path=self.workspace_path,
@@ -122,15 +124,7 @@ class PowerShellExecutor:
         )
 
 
-def _resolve_workspace(workspace_path: Path | str) -> Path:
-    """Resolve and validate the only directory from which commands may run."""
-    workspace = Path(workspace_path).expanduser().resolve(strict=True)
-    if not workspace.is_dir():
-        raise NotADirectoryError(f"Workspace path is not a directory: {workspace}")
-    return workspace
-
-
-def _coerce_output(output: str | bytes | None) -> str:
+def coerce_output(output: str | bytes | None) -> str:
     """Normalize timeout output, which can be bytes despite text mode."""
     if output is None:
         return ""
@@ -139,7 +133,7 @@ def _coerce_output(output: str | bytes | None) -> str:
     return output
 
 
-def _truncate_output(output: str, maximum_characters: int) -> tuple[str, bool]:
+def truncate_output(output: str, maximum_characters: int) -> tuple[str, bool]:
     """Keep stored process output at or below the configured character limit."""
     if len(output) <= maximum_characters:
         return output, False
