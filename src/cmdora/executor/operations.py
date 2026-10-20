@@ -155,6 +155,10 @@ class DeterministicOperations:
 
         return self._run_git(("add", "--", *pathspecs))
 
+    def git_add_all(self) -> CommandResult:
+        """Stage all non-ignored changes under the selected workspace."""
+        return self._run_git(("add", "--all", "--", "."))
+
     def git_commit(self, message: str) -> CommandResult:
         """Commit the currently staged changes with the supplied message."""
         if not message.strip():
