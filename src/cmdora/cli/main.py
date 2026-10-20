@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import Annotated, Any
+from uuid import uuid4
 
 import typer
 from rich.console import Console
@@ -58,7 +59,7 @@ app.add_typer(config_app, name="config")
 console = Console()
 
 
-def _print_unsupported_request(request: str, options: RequestOptions) -> None:
+def _print_unsupported_request(request: str, options: RequestOptions, request_id: str) -> None:
     """Explain that a request does not match a supported deterministic operation."""
     _record_audit(
         command=None,
@@ -66,6 +67,8 @@ def _print_unsupported_request(request: str, options: RequestOptions) -> None:
         duration_seconds=0,
         final_status="unsupported",
         policy_decision="not_evaluated",
+        request_id=request_id,
+        user_request=request,
     )
     payload = {
         "status": "unsupported",
@@ -101,6 +104,10 @@ def _record_audit(
     final_status: str,
     policy_decision: str = "allowed",
     approval_status: str = "not_required",
+    request_id: str | None = None,
+    user_request: str = "",
+    workspace_identifier: str | Path | None = None,
+    llm_plan: str | None = None,
 ) -> None:
     AuditLog().append(
         AuditRecord(
@@ -112,11 +119,15 @@ def _record_audit(
             stdout=stdout,
             stderr=stderr,
             final_status=final_status,
+            request_id=request_id or str(uuid4()),
+            user_request=user_request,
+            workspace_identifier=str(Path(workspace_identifier or Path.cwd()).resolve()),
+            llm_plan=llm_plan,
         )
     )
 
 
-def _record_command_result(result: CommandResult) -> None:
+def _record_command_result(result: CommandResult, *, request_id: str, user_request: str) -> None:
     status = (
         "timed_out"
         if result.timed_out
@@ -133,6 +144,9 @@ def _record_command_result(result: CommandResult) -> None:
         stdout=result.stdout,
         stderr=result.stderr,
         final_status=status,
+        request_id=request_id,
+        user_request=user_request,
+        workspace_identifier=result.workspace_path,
     )
 
 
@@ -159,7 +173,14 @@ def _display_path(root: Path, target: Path) -> str:
     return ".\\" + str(relative).replace("/", "\\")
 
 
-def _dry_run_create_file(path: str, workspace_path: Path, json_output: bool) -> None:
+def _dry_run_create_file(
+    path: str,
+    workspace_path: Path,
+    json_output: bool,
+    *,
+    request_id: str,
+    user_request: str,
+) -> None:
     config = RepositoryConfigStore(workspace_path).load()
     target = validate_repository_write_path(workspace_path, path, config)
     if target.exists() or target.is_symlink():
@@ -185,6 +206,9 @@ def _dry_run_create_file(path: str, workspace_path: Path, json_output: bool) -> 
         exit_code=None,
         duration_seconds=0,
         final_status="dry_run",
+        request_id=request_id,
+        user_request=user_request,
+        workspace_identifier=workspace_path,
     )
     if json_output:
         _emit_json(
@@ -202,10 +226,15 @@ def _dry_run_create_file(path: str, workspace_path: Path, json_output: bool) -> 
 
 
 def _emit_command_result(
-    result: CommandResult, json_output: bool, *, record_audit: bool = True
+    result: CommandResult,
+    json_output: bool,
+    *,
+    request_id: str,
+    user_request: str,
+    record_audit: bool = True,
 ) -> None:
     if record_audit:
-        _record_command_result(result)
+        _record_command_result(result, request_id=request_id, user_request=user_request)
     if json_output:
         _emit_json({"status": "success" if result.succeeded else "failed", **asdict(result)})
         return
@@ -227,12 +256,23 @@ def _emit_command_result(
         raise typer.Exit(code=1)
 
 
-def _dry_run_message(command: str, effect: str, json_output: bool) -> None:
+def _dry_run_message(
+    command: str,
+    effect: str,
+    json_output: bool,
+    *,
+    request_id: str,
+    user_request: str,
+    workspace_path: Path,
+) -> None:
     _record_audit(
         command=None,
         exit_code=None,
         duration_seconds=0,
         final_status="dry_run",
+        request_id=request_id,
+        user_request=user_request,
+        workspace_identifier=workspace_path,
     )
     if json_output:
         _emit_json({"status": "dry_run", "proposed_command": command, "effect": effect})
@@ -242,7 +282,7 @@ def _dry_run_message(command: str, effect: str, json_output: bool) -> None:
     typer.echo(f"Effect:\n{effect}")
 
 
-def _handle_deterministic_request(request: str, options: RequestOptions) -> bool:
+def _handle_deterministic_request(request: str, options: RequestOptions, request_id: str) -> bool:
     """Run a supported deterministic request; return false when no route matches."""
     workspace_path = Path.cwd().resolve()
     operations = DeterministicOperations(workspace_path)
@@ -250,7 +290,13 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
     file_path = _create_file_path(request)
     if file_path is not None:
         if options.dry_run:
-            _dry_run_create_file(file_path, workspace_path, options.json_output)
+            _dry_run_create_file(
+                file_path,
+                workspace_path,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+            )
             return True
         started_at = monotonic()
         created_path = operations.create_file(file_path)
@@ -260,6 +306,9 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
             duration_seconds=monotonic() - started_at,
             stdout=f"Created file: {_display_path(workspace_path, created_path)}",
             final_status="succeeded",
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
         )
         if options.json_output:
             _emit_json({"status": "success", "created_file": str(created_path)})
@@ -273,6 +322,9 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
                 "Get-ChildItem -File -Recurse",
                 "Lists workspace files modified today without changing them.",
                 options.json_output,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
             )
             return True
         started_at = monotonic()
@@ -283,6 +335,9 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
             duration_seconds=monotonic() - started_at,
             stdout=f"{len(files)} files modified today",
             final_status="succeeded",
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
         )
         if options.json_output:
             _emit_json({"status": "success", "files": [asdict(item) for item in files]})
@@ -300,9 +355,17 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
                 "git status --short --branch",
                 "Shows the current branch and working-tree changes.",
                 options.json_output,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
             )
         else:
-            _emit_command_result(operations.git_status(), options.json_output)
+            _emit_command_result(
+                operations.git_status(),
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+            )
         return True
 
     commit_match = re.search(r"\bcommit\b.*?\bwith\s+message\s+(.+)$", request.strip(), re.I)
@@ -315,14 +378,28 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
                 f"git add --all -- .\ngit commit -m {_powershell_literal(message)}",
                 "Stages workspace changes and commits them with the supplied message.",
                 options.json_output,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
             )
             return True
         add_result = operations.git_add_all()
-        _record_command_result(add_result)
+        _record_command_result(add_result, request_id=request_id, user_request=request)
         if not add_result.succeeded:
-            _emit_command_result(add_result, options.json_output, record_audit=False)
+            _emit_command_result(
+                add_result,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                record_audit=False,
+            )
         commit_result = operations.git_commit(message)
-        _emit_command_result(commit_result, options.json_output)
+        _emit_command_result(
+            commit_result,
+            options.json_output,
+            request_id=request_id,
+            user_request=request,
+        )
         return True
 
     if re.fullmatch(
@@ -335,9 +412,17 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
                 "git push origin HEAD",
                 "Pushes the current branch to the origin remote.",
                 options.json_output,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
             )
         else:
-            _emit_command_result(operations.git_push(), options.json_output)
+            _emit_command_result(
+                operations.git_push(),
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+            )
         return True
 
     return False
@@ -413,8 +498,11 @@ def main(
             ),
         )
         if request:
+            request_id = str(uuid4())
+            workspace_path = Path.cwd().resolve()
+            request_started_at = monotonic()
             try:
-                handled = _handle_deterministic_request(request, options)
+                handled = _handle_deterministic_request(request, options, request_id)
             except AuditLogError as error:
                 typer.echo(f"Audit error: {error}", err=True)
                 raise typer.Exit(code=1) from error
@@ -423,19 +511,22 @@ def main(
                     _record_audit(
                         command=request,
                         exit_code=1,
-                        duration_seconds=0,
+                        duration_seconds=monotonic() - request_started_at,
                         stderr=str(error),
                         final_status="denied" if isinstance(error, PermissionError) else "failed",
                         policy_decision="denied"
                         if isinstance(error, PermissionError)
                         else "allowed",
+                        request_id=request_id,
+                        user_request=request,
+                        workspace_identifier=workspace_path,
                     )
                 except AuditLogError:
                     pass
                 typer.echo(f"Error: {error}", err=True)
                 raise typer.Exit(code=1) from error
             if not handled:
-                _print_unsupported_request(request, options)
+                _print_unsupported_request(request, options, request_id)
 
 
 @config_app.command("init")
@@ -475,11 +566,18 @@ def history() -> None:
     for record in records:
         console.print(
             f"[{record.get('timestamp', 'unknown time')}] "
+            f"Request ID: {record.get('request_id', 'unknown')} | "
             f"{record.get('final_status', 'unknown')} "
             f"(policy: {record.get('policy_decision', 'unknown')}; "
             f"approval: {record.get('approval_status', 'unknown')})"
         )
         command = record.get("executed_command")
+        if record.get("user_request"):
+            console.print(f"  Request: {record['user_request']}")
+        if record.get("workspace_identifier"):
+            console.print(f"  Workspace: {record['workspace_identifier']}")
+        if record.get("llm_plan"):
+            console.print(f"  LLM plan: {record['llm_plan']}")
         if command:
             console.print(f"  Command: {command}")
         console.print(

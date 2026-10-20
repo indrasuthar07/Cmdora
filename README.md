@@ -37,6 +37,7 @@ the current workspace.
 
 ## Audit history
 
-Cmdora records deterministic CLI actions in the user data directory as JSON Lines at
-`%APPDATA%\CmdoraAI\history.jsonl` on Windows. `Cmdora history` shows the latest records,
-including policy and approval decisions, command result, duration, and redacted output.
+Cmdora records deterministic CLI actions in SQLite at `%APPDATA%\CmdoraAI\history.db` on
+Windows. `Cmdora history` shows the latest records, including request ID, timestamp, user
+request, workspace, LLM plan (when available), policy and approval decisions, command result,
+duration, and redacted output.

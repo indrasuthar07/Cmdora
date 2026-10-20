@@ -77,6 +77,39 @@ def test_history_command_shows_empty_state() -> None:
     assert "No command history yet." in result.output
 
 
+def test_history_command_displays_sqlite_audit_fields() -> None:
+    from cmdora.storage import AuditLog, AuditRecord
+
+    AuditLog().append(
+        AuditRecord(
+            policy_decision="allowed",
+            approval_status="not_required",
+            executed_command="git status --short --branch",
+            exit_code=0,
+            duration_seconds=0.125,
+            stdout="## main",
+            stderr="",
+            final_status="succeeded",
+            user_request="show git status",
+            workspace_identifier="C:/workspace/project",
+            llm_plan=None,
+        )
+    )
+
+    result = runner.invoke(app, ["history"])
+
+    assert result.exit_code == 0
+    assert "Request ID:" in result.output
+    assert "Request: show git status" in result.output
+    assert "Workspace: C:/workspace/project" in result.output
+    assert "Command: git status --short --branch" in result.output
+    assert "policy: allowed" in result.output
+    assert "not_required" in result.output
+    assert "Exit: 0" in result.output
+    assert "Duration: 0.125s" in result.output
+    assert "stdout: ## main" in result.output
+
+
 def test_natural_language_request_accepts_execution_flags() -> None:
     result = runner.invoke(
         app,
@@ -157,7 +190,7 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
 
     from cmdora.storage import AuditLog
 
-    records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.jsonl").recent()
+    records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()
     assert [record["executed_command"] for record in records] == [
         "git status --short --branch",
         "git add --all -- .",
@@ -165,3 +198,8 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     ]
     assert all(record["policy_decision"] == "allowed" for record in records)
     assert all(record["approval_status"] == "not_required" for record in records)
+    assert all(record["user_request"] for record in records)
+    assert all(record["workspace_identifier"] == str(tmp_path) for record in records)
+    assert all(record["llm_plan"] is None for record in records)
+    assert records[0]["request_id"] != records[-1]["request_id"]
+    assert records[1]["request_id"] == records[2]["request_id"]
