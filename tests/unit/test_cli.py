@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import tomllib
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -33,21 +34,162 @@ def test_version_is_available() -> None:
     assert "Cmdora 0.1.0" in result.output
 
 
-def test_config_init_command_is_available() -> None:
+def test_config_init_creates_default_user_configuration(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
     result = runner.invoke(app, ["config", "init"])
 
     assert result.exit_code == 0
-    assert "available in Phase 2" in result.output
+    config_path = tmp_path / "CmdoraAI" / "config.toml"
+    assert config_path.is_file()
+    assert "Created user configuration" in result.output
+    assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
+        "model": "gemini-3.8-flash",
+        "default_timeout_seconds": 30,
+        "max_output_characters": 8000,
+        "default_autonomy_mode": "off",
+        "protected_branches": ["main", "master"],
+    }
 
 
-def test_history_command_is_available() -> None:
+def test_config_init_project_creates_workspace_scoped_configuration(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["config", "init", "--project"])
+
+    assert result.exit_code == 0
+    config_path = tmp_path / ".Cmdora" / "config.toml"
+    assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
+        "autonomy_mode": "git",
+        "allowed_write_directories": ["src", "tests"],
+        "protected_branches": ["main", "master"],
+    }
+    assert "Created project configuration" in result.output
+
+
+def test_history_command_shows_empty_state() -> None:
     result = runner.invoke(app, ["history"])
 
     assert result.exit_code == 0
-    assert "available after audit storage" in result.output
+    assert "No command history yet." in result.output
 
 
-def test_natural_language_request_accepts_execution_flags() -> None:
+def test_history_command_displays_sqlite_audit_fields() -> None:
+    from cmdora.storage import AuditLog, AuditRecord
+
+    AuditLog().append(
+        AuditRecord(
+            policy_decision="allowed",
+            approval_status="not_required",
+            executed_command="git status --short --branch",
+            exit_code=0,
+            duration_seconds=0.125,
+            stdout="## main",
+            stderr="",
+            final_status="succeeded",
+            user_request="show git status",
+            workspace_identifier="C:/workspace/project",
+            llm_plan=None,
+        )
+    )
+
+    result = runner.invoke(app, ["history"])
+
+    assert result.exit_code == 0
+    assert "Request ID:" in result.output
+    assert "Request: show git status" in result.output
+    assert "Workspace: C:/workspace/project" in result.output
+    assert "Command: git status --short --branch" in result.output
+    assert "policy: allowed" in result.output
+    assert "not_required" in result.output
+    assert "Exit: 0" in result.output
+    assert "Duration: 0.125s" in result.output
+    assert "stdout: ## main" in result.output
+
+
+def test_history_last_limits_records_to_the_most_recent_number() -> None:
+    from cmdora.storage import AuditLog, AuditRecord
+
+    log = AuditLog()
+    for index in range(3):
+        log.append(
+            AuditRecord(
+                policy_decision="allowed",
+                approval_status="not_required",
+                executed_command=f"command-{index}",
+                exit_code=0,
+                duration_seconds=0.01,
+                stdout="",
+                stderr="",
+                final_status="succeeded",
+                request_id=f"request-{index}",
+                user_request=f"request text {index}",
+            )
+        )
+
+    result = runner.invoke(app, ["history", "--last", "2"])
+
+    assert result.exit_code == 0
+    assert "request text 0" not in result.output
+    assert "request text 1" in result.output
+    assert "request text 2" in result.output
+
+
+def test_history_show_displays_all_events_for_exact_request_id() -> None:
+    from cmdora.storage import AuditLog, AuditRecord
+
+    log = AuditLog()
+    for request_id, command in (
+        ("shared-request-id", "git add --all"),
+        ("shared-request-id", "git commit -m update"),
+        ("other-request-id", "git status"),
+    ):
+        log.append(
+            AuditRecord(
+                policy_decision="allowed",
+                approval_status="not_required",
+                executed_command=command,
+                exit_code=0,
+                duration_seconds=0.01,
+                stdout="",
+                stderr="",
+                final_status="succeeded",
+                request_id=request_id,
+                user_request="commit my changes",
+            )
+        )
+
+    result = runner.invoke(app, ["history", "show", "shared-request-id"])
+
+    assert result.exit_code == 0
+    assert "git add --all" in result.output
+    assert "git commit -m update" in result.output
+    assert "git status" not in result.output
+
+
+def test_history_show_reports_unknown_request_id() -> None:
+    result = runner.invoke(app, ["history", "show", "unknown-id"])
+
+    assert result.exit_code == 1
+    assert "No history found for request ID: unknown-id" in result.output
+
+
+def test_history_last_must_be_positive() -> None:
+    result = runner.invoke(app, ["history", "--last", "0"])
+
+    assert result.exit_code != 0
+
+
+def test_natural_language_request_accepts_execution_flags(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from cmdora.config import RepositoryConfigStore
+
+    monkeypatch.chdir(tmp_path)
+    RepositoryConfigStore(tmp_path).initialize()
     result = runner.invoke(
         app,
         [
@@ -62,6 +204,31 @@ def test_natural_language_request_accepts_execution_flags() -> None:
     assert result.exit_code == 0
     assert "Dry run only" in result.output
     assert "Proposed command" in result.output
+
+
+def test_autonomy_consent_is_scoped_to_the_current_repository(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    trusted_repository = tmp_path / "trusted"
+    untrusted_repository = tmp_path / "untrusted"
+    trusted_repository.mkdir()
+    untrusted_repository.mkdir()
+    from cmdora.config import RepositoryConfigStore
+
+    RepositoryConfigStore(trusted_repository).initialize()
+
+    monkeypatch.chdir(trusted_repository)
+    trusted_result = runner.invoke(
+        app, ["list files modified today", "--dry-run", "--autonomy", "git"]
+    )
+    monkeypatch.chdir(untrusted_repository)
+    untrusted_result = runner.invoke(
+        app, ["list files modified today", "--dry-run", "--autonomy", "git"]
+    )
+
+    assert trusted_result.exit_code == 0
+    assert untrusted_result.exit_code == 1
+    assert "not enabled for this repository" in untrusted_result.output
 
 
 def test_natural_language_request_can_return_json() -> None:
@@ -124,3 +291,19 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
         text=True,
     )
     assert log.stdout.strip() == "add feature"
+
+    from cmdora.storage import AuditLog
+
+    records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()
+    assert [record["executed_command"] for record in records] == [
+        "git status --short --branch",
+        "git add --all -- .",
+        "git commit -m add feature",
+    ]
+    assert all(record["policy_decision"] == "allowed" for record in records)
+    assert all(record["approval_status"] == "not_required" for record in records)
+    assert all(record["user_request"] for record in records)
+    assert all(record["workspace_identifier"] == str(tmp_path) for record in records)
+    assert all(record["llm_plan"] is None for record in records)
+    assert records[0]["request_id"] != records[-1]["request_id"]
+    assert records[1]["request_id"] == records[2]["request_id"]

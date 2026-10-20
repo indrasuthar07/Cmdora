@@ -30,6 +30,22 @@ def test_create_file_creates_parent_directories_without_overwriting(tmp_path: Pa
         operations.create_file(tmp_path.parent / "outside.txt")
 
 
+def test_repository_config_restricts_file_creation_to_allowed_directories(tmp_path: Path) -> None:
+    config_directory = tmp_path / ".Cmdora"
+    config_directory.mkdir()
+    (config_directory / "config.toml").write_text(
+        'autonomy_mode = "git"\n'
+        'allowed_write_directories = ["src", "tests"]\n'
+        'protected_branches = ["main", "master"]\n',
+        encoding="utf-8",
+    )
+    operations = DeterministicOperations(tmp_path)
+
+    assert operations.create_file("src/main.py").is_file()
+    with pytest.raises(PermissionError, match="not in an allowed project directory"):
+        operations.create_file("notes.txt")
+
+
 def test_list_modified_today_returns_only_current_day_files(tmp_path: Path) -> None:
     operations = DeterministicOperations(tmp_path)
     today_file = tmp_path / "today.txt"
