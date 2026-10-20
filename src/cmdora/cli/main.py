@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from time import monotonic
 from typing import Annotated, Any
 
 import typer
@@ -18,6 +19,7 @@ from cmdora.config import (
     validate_repository_write_path,
 )
 from cmdora.executor import CommandResult, DeterministicOperations
+from cmdora.storage import AuditLog, AuditLogError, AuditRecord
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,13 @@ console = Console()
 
 def _print_unsupported_request(request: str, options: RequestOptions) -> None:
     """Explain that a request does not match a supported deterministic operation."""
+    _record_audit(
+        command=None,
+        exit_code=None,
+        duration_seconds=0,
+        final_status="unsupported",
+        policy_decision="not_evaluated",
+    )
     payload = {
         "status": "unsupported",
         "request": request,
@@ -80,6 +89,51 @@ def _print_unsupported_request(request: str, options: RequestOptions) -> None:
 
 def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, default=str))
+
+
+def _record_audit(
+    *,
+    command: str | None,
+    exit_code: int | None,
+    duration_seconds: float,
+    stdout: str = "",
+    stderr: str = "",
+    final_status: str,
+    policy_decision: str = "allowed",
+    approval_status: str = "not_required",
+) -> None:
+    AuditLog().append(
+        AuditRecord(
+            policy_decision=policy_decision,
+            approval_status=approval_status,
+            executed_command=command,
+            exit_code=exit_code,
+            duration_seconds=duration_seconds,
+            stdout=stdout,
+            stderr=stderr,
+            final_status=final_status,
+        )
+    )
+
+
+def _record_command_result(result: CommandResult) -> None:
+    status = (
+        "timed_out"
+        if result.timed_out
+        else "cancelled"
+        if result.cancelled
+        else "succeeded"
+        if result.succeeded
+        else "failed"
+    )
+    _record_audit(
+        command=" ".join(result.command),
+        exit_code=result.exit_code,
+        duration_seconds=result.elapsed_seconds,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        final_status=status,
+    )
 
 
 def _create_file_path(request: str) -> str | None:
@@ -126,6 +180,12 @@ def _dry_run_create_file(path: str, workspace_path: Path, json_output: bool) -> 
     }.get(extension, "")
     description = f"{file_type + ' ' if file_type else ''}file"
     effect = f"Creates a new empty {description} in the current workspace."
+    _record_audit(
+        command=None,
+        exit_code=None,
+        duration_seconds=0,
+        final_status="dry_run",
+    )
     if json_output:
         _emit_json(
             {
@@ -141,7 +201,11 @@ def _dry_run_create_file(path: str, workspace_path: Path, json_output: bool) -> 
     typer.echo(f"Effect:\n{effect}")
 
 
-def _emit_command_result(result: CommandResult, json_output: bool) -> None:
+def _emit_command_result(
+    result: CommandResult, json_output: bool, *, record_audit: bool = True
+) -> None:
+    if record_audit:
+        _record_command_result(result)
     if json_output:
         _emit_json({"status": "success" if result.succeeded else "failed", **asdict(result)})
         return
@@ -164,6 +228,12 @@ def _emit_command_result(result: CommandResult, json_output: bool) -> None:
 
 
 def _dry_run_message(command: str, effect: str, json_output: bool) -> None:
+    _record_audit(
+        command=None,
+        exit_code=None,
+        duration_seconds=0,
+        final_status="dry_run",
+    )
     if json_output:
         _emit_json({"status": "dry_run", "proposed_command": command, "effect": effect})
         return
@@ -182,7 +252,15 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
         if options.dry_run:
             _dry_run_create_file(file_path, workspace_path, options.json_output)
             return True
+        started_at = monotonic()
         created_path = operations.create_file(file_path)
+        _record_audit(
+            command=f"create_file({file_path!r})",
+            exit_code=0,
+            duration_seconds=monotonic() - started_at,
+            stdout=f"Created file: {_display_path(workspace_path, created_path)}",
+            final_status="succeeded",
+        )
         if options.json_output:
             _emit_json({"status": "success", "created_file": str(created_path)})
         else:
@@ -197,7 +275,15 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
                 options.json_output,
             )
             return True
+        started_at = monotonic()
         files = operations.list_modified_today()
+        _record_audit(
+            command="list_modified_today()",
+            exit_code=0,
+            duration_seconds=monotonic() - started_at,
+            stdout=f"{len(files)} files modified today",
+            final_status="succeeded",
+        )
         if options.json_output:
             _emit_json({"status": "success", "files": [asdict(item) for item in files]})
         elif not files:
@@ -232,8 +318,9 @@ def _handle_deterministic_request(request: str, options: RequestOptions) -> bool
             )
             return True
         add_result = operations.git_add_all()
+        _record_command_result(add_result)
         if not add_result.succeeded:
-            _emit_command_result(add_result, options.json_output)
+            _emit_command_result(add_result, options.json_output, record_audit=False)
         commit_result = operations.git_commit(message)
         _emit_command_result(commit_result, options.json_output)
         return True
@@ -328,7 +415,23 @@ def main(
         if request:
             try:
                 handled = _handle_deterministic_request(request, options)
+            except AuditLogError as error:
+                typer.echo(f"Audit error: {error}", err=True)
+                raise typer.Exit(code=1) from error
             except (OSError, ValueError) as error:
+                try:
+                    _record_audit(
+                        command=request,
+                        exit_code=1,
+                        duration_seconds=0,
+                        stderr=str(error),
+                        final_status="denied" if isinstance(error, PermissionError) else "failed",
+                        policy_decision="denied"
+                        if isinstance(error, PermissionError)
+                        else "allowed",
+                    )
+                except AuditLogError:
+                    pass
                 typer.echo(f"Error: {error}", err=True)
                 raise typer.Exit(code=1) from error
             if not handled:
@@ -359,8 +462,33 @@ def config_init(
 
 @app.command()
 def history() -> None:
-    """Show audit history after audit storage is added in Phase 2."""
-    console.print("History will be available after audit storage is added in Phase 2.")
+    """Show recent command and operation audit records."""
+    try:
+        records = AuditLog().recent()
+    except AuditLogError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if not records:
+        console.print("No command history yet.")
+        return
+
+    for record in records:
+        console.print(
+            f"[{record.get('timestamp', 'unknown time')}] "
+            f"{record.get('final_status', 'unknown')} "
+            f"(policy: {record.get('policy_decision', 'unknown')}; "
+            f"approval: {record.get('approval_status', 'unknown')})"
+        )
+        command = record.get("executed_command")
+        if command:
+            console.print(f"  Command: {command}")
+        console.print(
+            f"  Exit: {record.get('exit_code')}; Duration: {record.get('duration_seconds', 0):.3f}s"
+        )
+        if record.get("stdout"):
+            console.print(f"  stdout: {record['stdout']}")
+        if record.get("stderr"):
+            console.print(f"  stderr: {record['stderr']}")
 
 
 if __name__ == "__main__":

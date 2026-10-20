@@ -34,3 +34,9 @@ Project settings stay inside that workspace and include an autonomy mode, allowe
 directories (`src` and `tests` by default), and protected Git branches. File creation is
 restricted to the configured directories; without a project config, writes remain bounded to
 the current workspace.
+
+## Audit history
+
+Cmdora records deterministic CLI actions in the user data directory as JSON Lines at
+`%APPDATA%\CmdoraAI\history.jsonl` on Windows. `Cmdora history` shows the latest records,
+including policy and approval decisions, command result, duration, and redacted output.

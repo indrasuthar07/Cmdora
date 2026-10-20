@@ -70,11 +70,11 @@ def test_config_init_project_creates_workspace_scoped_configuration(
     assert "Created project configuration" in result.output
 
 
-def test_history_command_is_available() -> None:
+def test_history_command_shows_empty_state() -> None:
     result = runner.invoke(app, ["history"])
 
     assert result.exit_code == 0
-    assert "available after audit storage" in result.output
+    assert "No command history yet." in result.output
 
 
 def test_natural_language_request_accepts_execution_flags() -> None:
@@ -154,3 +154,14 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
         text=True,
     )
     assert log.stdout.strip() == "add feature"
+
+    from cmdora.storage import AuditLog
+
+    records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.jsonl").recent()
+    assert [record["executed_command"] for record in records] == [
+        "git status --short --branch",
+        "git add --all -- .",
+        "git commit -m add feature",
+    ]
+    assert all(record["policy_decision"] == "allowed" for record in records)
+    assert all(record["approval_status"] == "not_required" for record in records)
