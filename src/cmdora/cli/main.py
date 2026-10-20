@@ -11,6 +11,7 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from cmdora import __version__
+from cmdora.config import ApplicationConfigStore, ConfigError
 from cmdora.executor import CommandResult, DeterministicOperations
 from cmdora.executor.workspace import resolve_workspace_path
 
@@ -333,8 +334,18 @@ def main(
 
 @config_app.command("init")
 def config_init() -> None:
-    """Initialize repository-specific configuration in a later phase."""
-    console.print("Configuration initialization will be available in Phase 2.")
+    """Create the user-level configuration file with default settings."""
+    store = ApplicationConfigStore()
+    try:
+        created = store.initialize()
+    except ConfigError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    if created:
+        console.print(f"Created user configuration: {store.config_path}")
+    else:
+        console.print(f"Configuration already exists; left unchanged: {store.config_path}")
 
 
 @app.command()

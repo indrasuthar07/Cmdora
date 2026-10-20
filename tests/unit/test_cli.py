@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import tomllib
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -33,11 +34,24 @@ def test_version_is_available() -> None:
     assert "Cmdora 0.1.0" in result.output
 
 
-def test_config_init_command_is_available() -> None:
+def test_config_init_creates_default_user_configuration(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
     result = runner.invoke(app, ["config", "init"])
 
     assert result.exit_code == 0
-    assert "available in Phase 2" in result.output
+    config_path = tmp_path / "CmdoraAI" / "config.toml"
+    assert config_path.is_file()
+    assert "Created user configuration" in result.output
+    assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
+        "model": "gemini-3.8-flash",
+        "default_timeout_seconds": 30,
+        "max_output_characters": 8000,
+        "default_autonomy_mode": "off",
+        "protected_branches": ["main", "master"],
+    }
 
 
 def test_history_command_is_available() -> None:

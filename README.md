@@ -20,3 +20,9 @@ No need to memorize the exact syntax. Just describe the task.
 ` cmdora "list all files modified in the last 24 hours"`
 
 ` cmdora "list all running Docker containers"`
+
+## User configuration
+
+Run `Cmdora config init` to create the default user configuration. On Windows it is stored at
+`%APPDATA%\CmdoraAI\config.toml`, outside the repository. The file contains model, timeout,
+output-size, autonomy-mode, and protected-branch settings; API credentials are not stored there.
