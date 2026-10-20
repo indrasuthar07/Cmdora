@@ -183,7 +183,13 @@ def test_history_last_must_be_positive() -> None:
     assert result.exit_code != 0
 
 
-def test_natural_language_request_accepts_execution_flags() -> None:
+def test_natural_language_request_accepts_execution_flags(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from cmdora.config import RepositoryConfigStore
+
+    monkeypatch.chdir(tmp_path)
+    RepositoryConfigStore(tmp_path).initialize()
     result = runner.invoke(
         app,
         [
@@ -198,6 +204,31 @@ def test_natural_language_request_accepts_execution_flags() -> None:
     assert result.exit_code == 0
     assert "Dry run only" in result.output
     assert "Proposed command" in result.output
+
+
+def test_autonomy_consent_is_scoped_to_the_current_repository(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    trusted_repository = tmp_path / "trusted"
+    untrusted_repository = tmp_path / "untrusted"
+    trusted_repository.mkdir()
+    untrusted_repository.mkdir()
+    from cmdora.config import RepositoryConfigStore
+
+    RepositoryConfigStore(trusted_repository).initialize()
+
+    monkeypatch.chdir(trusted_repository)
+    trusted_result = runner.invoke(
+        app, ["list files modified today", "--dry-run", "--autonomy", "git"]
+    )
+    monkeypatch.chdir(untrusted_repository)
+    untrusted_result = runner.invoke(
+        app, ["list files modified today", "--dry-run", "--autonomy", "git"]
+    )
+
+    assert trusted_result.exit_code == 0
+    assert untrusted_result.exit_code == 1
+    assert "not enabled for this repository" in untrusted_result.output
 
 
 def test_natural_language_request_can_return_json() -> None:

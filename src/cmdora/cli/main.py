@@ -291,6 +291,13 @@ def _dry_run_message(
 def _handle_deterministic_request(request: str, options: RequestOptions, request_id: str) -> bool:
     """Run a supported deterministic request; return false when no route matches."""
     workspace_path = Path.cwd().resolve()
+    if options.autonomy is not None and options.autonomy != "off":
+        repository_config = RepositoryConfigStore(workspace_path).load()
+        if repository_config.autonomy_mode != options.autonomy:
+            raise PermissionError(
+                f"Autonomy mode '{options.autonomy}' is not enabled for this repository. "
+                "Run 'Cmdora config init --project' here and set its autonomy_mode explicitly."
+            )
     operations = DeterministicOperations(workspace_path)
 
     file_path = _create_file_path(request)

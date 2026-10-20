@@ -30,6 +30,28 @@ def test_audit_record_redacts_secrets_from_command_and_output() -> None:
     assert "hidden" not in (record.llm_plan or "")
 
 
+def test_audit_history_never_returns_unredacted_secret_values(tmp_path: Path) -> None:
+    log = AuditLog(tmp_path / "history.db")
+    log.append(
+        AuditRecord(
+            policy_decision="allowed",
+            approval_status="not_required",
+            executed_command="tool --token=history-secret",
+            exit_code=0,
+            duration_seconds=0.01,
+            stdout="GEMINI_API_KEY=history-gemini-secret",
+            stderr="Authorization: Bearer history-bearer-secret",
+            final_status="succeeded",
+        )
+    )
+
+    displayed_values = " ".join(str(value) for value in log.recent()[0].values())
+
+    assert "history-secret" not in displayed_values
+    assert "history-gemini-secret" not in displayed_values
+    assert "history-bearer-secret" not in displayed_values
+
+
 def test_audit_log_persists_all_required_fields_in_sqlite_and_returns_recent_records(
     tmp_path: Path,
 ) -> None:

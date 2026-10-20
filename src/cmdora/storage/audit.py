@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -13,32 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from cmdora.config.app_config import default_config_path
-
-_SECRET_PATTERNS = (
-    re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/-]+=*"),
-    re.compile(
-        r"(?i)(\b[A-Z0-9_]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"
-        r"client[_-]?secret|password|passwd|secret)\b\s*[:=]\s*)"
-        r"(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
-    ),
-    re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
-    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
-    re.compile(r"(?i)(://[^:/\s]+:)[^@/\s]+(@)"),
-)
-
-
-def redact_sensitive_text(value: str) -> str:
-    """Redact common credentials before audit data is persisted."""
-    redacted = value
-    for pattern in _SECRET_PATTERNS:
-        if pattern.pattern.startswith("(?i)(://"):
-            redacted = pattern.sub(r"\1[REDACTED]\2", redacted)
-        elif pattern.groups:
-            redacted = pattern.sub(r"\1[REDACTED]", redacted)
-        else:
-            redacted = pattern.sub("[REDACTED]", redacted)
-    return redacted
+from cmdora.safety import redact_sensitive_text
 
 
 @dataclass(frozen=True)
