@@ -19,7 +19,11 @@ from cmdora.config import (
     RepositoryConfigStore,
     validate_repository_write_path,
 )
+from cmdora.context import SafeContext
 from cmdora.executor import CommandResult, DeterministicOperations
+from cmdora.llm import PlannerProvider
+from cmdora.llm.gemini import GeminiPlanner, PlannerError
+from cmdora.schemas import ActionPlan
 from cmdora.storage import AuditLog, AuditLogError, AuditRecord
 
 
@@ -65,39 +69,95 @@ app.add_typer(history_app, name="history")
 console = Console()
 
 
-def _print_unsupported_request(request: str, options: RequestOptions, request_id: str) -> None:
-    """Explain that a request does not match a supported deterministic operation."""
+def _emit_json(payload: dict[str, Any]) -> None:
+    typer.echo(json.dumps(payload, default=str))
+
+
+def _safe_planning_context(workspace_path: Path) -> SafeContext:
+    """Collect only the allowlisted, redacted metadata needed for a plan."""
+    operations = DeterministicOperations(workspace_path)
+    status_result = operations.git_status()
+    is_git_repository = status_result.succeeded
+    status = status_result.stdout if is_git_repository else ""
+    branch: str | None = None
+    if status:
+        first_line = status.splitlines()[0]
+        if first_line.startswith("## "):
+            branch = first_line.removeprefix("## ").split("...", maxsplit=1)[0]
+            if branch.startswith("No commits yet on "):
+                branch = branch.removeprefix("No commits yet on ")
+            if branch == "HEAD (no branch)":
+                branch = None
+
+    repository_config = RepositoryConfigStore(workspace_path).load()
+    return SafeContext(
+        workspace_basename=workspace_path.name or "workspace",
+        is_git_repository=is_git_repository,
+        git_branch=branch,
+        git_status=status,
+        supported_actions=[
+            "inspect",
+            "create_file",
+            "list_modified_today",
+            "git_status",
+            "git_add",
+            "git_commit",
+            "git_push",
+            "shell_command",
+            "clarification",
+        ],
+        autonomy_mode=repository_config.autonomy_mode,
+    )
+
+
+def _display_action_plan(plan: ActionPlan, *, json_output: bool) -> None:
+    """Present a plan as a proposal; this function never executes its steps."""
+    status = "needs_clarification" if plan.needs_clarification else "planned"
+    if json_output:
+        _emit_json({"status": status, "plan": plan.model_dump(mode="json")})
+        return
+
+    console.print(f"[bold]Plan[/bold] — {plan.summary}")
+    if plan.needs_clarification:
+        console.print(f"[yellow]Clarification needed:[/yellow] {plan.clarifying_question}")
+        return
+    for step in plan.steps:
+        console.print(f"{step.id}. [{step.kind}] {step.purpose}")
+        if step.command:
+            console.print(f"   Proposed PowerShell: {step.command}")
+        console.print(f"   Effect: {step.expected_effect}")
+        console.print(f"   Risk: {step.risk_hint}")
+    console.print("Plan only — no proposed action was executed.")
+
+
+def _handle_planned_request(
+    request: str,
+    options: RequestOptions,
+    request_id: str,
+    *,
+    planner: PlannerProvider | None = None,
+    workspace_path: Path | None = None,
+) -> ActionPlan:
+    """Plan an otherwise unsupported request and record it without execution."""
+    workspace = (workspace_path or Path.cwd()).resolve()
+    app_config = ApplicationConfigStore().load()
+    active_planner = planner or GeminiPlanner(model=app_config.model)
+    context = _safe_planning_context(workspace)
+    plan = active_planner.create_plan(request, context)
     _record_audit(
         command=None,
         exit_code=None,
         duration_seconds=0,
-        final_status="unsupported",
+        final_status="needs_clarification" if plan.needs_clarification else "planned",
         policy_decision="not_evaluated",
+        approval_status="not_required",
         request_id=request_id,
         user_request=request,
+        workspace_identifier=workspace,
+        llm_plan=plan.model_dump_json(),
     )
-    payload = {
-        "status": "unsupported",
-        "request": request,
-        "options": asdict(options),
-        "message": "This request is not supported by the current deterministic CLI.",
-    }
-
-    if options.json_output:
-        typer.echo(json.dumps(payload))
-        return
-
-    console.print("[bold]Request received[/bold]")
-    console.print(request)
-    if options.dry_run:
-        console.print("[yellow]Dry-run enabled - no command will be executed.[/yellow]")
-    if options.autonomy:
-        console.print(f"Autonomy mode requested: {options.autonomy}")
-    console.print("This request is not supported by the current deterministic CLI.")
-
-
-def _emit_json(payload: dict[str, Any]) -> None:
-    typer.echo(json.dumps(payload, default=str))
+    _display_action_plan(plan, json_output=options.json_output)
+    return plan
 
 
 def _record_audit(
@@ -539,7 +599,47 @@ def main(
                 typer.echo(f"Error: {error}", err=True)
                 raise typer.Exit(code=1) from error
             if not handled:
-                _print_unsupported_request(request, options, request_id)
+                try:
+                    _handle_planned_request(request, options, request_id)
+                except AuditLogError as error:
+                    typer.echo(f"Audit error: {error}", err=True)
+                    raise typer.Exit(code=1) from error
+                except PlannerError as error:
+                    try:
+                        _record_audit(
+                            command=None,
+                            exit_code=None,
+                            duration_seconds=monotonic() - request_started_at,
+                            stderr=str(error),
+                            final_status="planning_failed",
+                            policy_decision="not_evaluated",
+                            request_id=request_id,
+                            user_request=request,
+                            workspace_identifier=workspace_path,
+                        )
+                    except AuditLogError:
+                        pass
+                    typer.echo(f"Planning error: {error}", err=True)
+                    raise typer.Exit(code=1) from error
+                except (OSError, ValueError) as error:
+                    try:
+                        _record_audit(
+                            command=None,
+                            exit_code=1,
+                            duration_seconds=monotonic() - request_started_at,
+                            stderr=str(error),
+                            final_status="failed",
+                            policy_decision="denied"
+                            if isinstance(error, PermissionError)
+                            else "not_evaluated",
+                            request_id=request_id,
+                            user_request=request,
+                            workspace_identifier=workspace_path,
+                        )
+                    except AuditLogError:
+                        pass
+                    typer.echo(f"Planning error: {error}", err=True)
+                    raise typer.Exit(code=1) from error
 
 
 @config_app.command("init")
