@@ -56,6 +56,12 @@ app = typer.Typer(
 )
 config_app = typer.Typer(help="Manage Cmdora configuration.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
+history_app = typer.Typer(
+    help="Browse command and operation audit history.",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+app.add_typer(history_app, name="history")
 console = Console()
 
 
@@ -551,18 +557,7 @@ def config_init(
         console.print(f"Configuration already exists; left unchanged: {store.config_path}")
 
 
-@app.command()
-def history() -> None:
-    """Show recent command and operation audit records."""
-    try:
-        records = AuditLog().recent()
-    except AuditLogError as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=1) from error
-    if not records:
-        console.print("No command history yet.")
-        return
-
+def _display_history_records(records: list[dict[str, Any]]) -> None:
     for record in records:
         console.print(
             f"[{record.get('timestamp', 'unknown time')}] "
@@ -571,13 +566,10 @@ def history() -> None:
             f"(policy: {record.get('policy_decision', 'unknown')}; "
             f"approval: {record.get('approval_status', 'unknown')})"
         )
+        console.print(f"  Request: {record.get('user_request') or '(not recorded)'}")
+        console.print(f"  Workspace: {record.get('workspace_identifier') or '(not recorded)'}")
+        console.print(f"  LLM plan: {record.get('llm_plan') or '(not available)'}")
         command = record.get("executed_command")
-        if record.get("user_request"):
-            console.print(f"  Request: {record['user_request']}")
-        if record.get("workspace_identifier"):
-            console.print(f"  Workspace: {record['workspace_identifier']}")
-        if record.get("llm_plan"):
-            console.print(f"  LLM plan: {record['llm_plan']}")
         if command:
             console.print(f"  Command: {command}")
         console.print(
@@ -587,6 +579,39 @@ def history() -> None:
             console.print(f"  stdout: {record['stdout']}")
         if record.get("stderr"):
             console.print(f"  stderr: {record['stderr']}")
+
+
+@history_app.callback()
+def history(
+    ctx: typer.Context,
+    last: Annotated[int, typer.Option("--last", min=1, help="Show the latest N records.")] = 20,
+) -> None:
+    """Show recent command and operation audit records."""
+    if ctx.invoked_subcommand is not None:
+        return
+    try:
+        records = AuditLog().recent(limit=last)
+    except AuditLogError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if not records:
+        console.print("No command history yet.")
+        return
+    _display_history_records(records)
+
+
+@history_app.command("show")
+def history_show(request_id: str) -> None:
+    """Show every audit record for one request ID."""
+    try:
+        records = AuditLog().by_request_id(request_id)
+    except AuditLogError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if not records:
+        typer.echo(f"No history found for request ID: {request_id}", err=True)
+        raise typer.Exit(code=1)
+    _display_history_records(records)
 
 
 if __name__ == "__main__":

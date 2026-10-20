@@ -105,6 +105,32 @@ def test_audit_log_recent_limit_returns_newest_in_chronological_order(
     assert [record["user_request"] for record in log.recent(limit=2)] == ["second", "third"]
 
 
+def test_audit_log_returns_all_rows_for_request_id_in_execution_order(
+    tmp_path: Path,
+) -> None:
+    log = AuditLog(tmp_path / "history.db")
+    for command in ("git add --all", "git commit -m update"):
+        log.append(
+            AuditRecord(
+                policy_decision="allowed",
+                approval_status="not_required",
+                executed_command=command,
+                exit_code=0,
+                duration_seconds=0.01,
+                stdout="",
+                stderr="",
+                final_status="succeeded",
+                request_id="request-123",
+            )
+        )
+
+    assert [record["executed_command"] for record in log.by_request_id("request-123")] == [
+        "git add --all",
+        "git commit -m update",
+    ]
+    assert log.by_request_id("missing") == []
+
+
 def test_redactor_masks_common_provider_tokens() -> None:
     secret = "ghp_" + "a" * 32
 

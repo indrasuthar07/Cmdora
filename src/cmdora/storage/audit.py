@@ -163,6 +163,26 @@ class AuditLog:
         except (OSError, sqlite3.Error) as error:
             raise AuditLogError(f"Could not read audit history at {self.path}: {error}") from error
 
+    def by_request_id(self, request_id: str) -> list[dict[str, Any]]:
+        """Return every command record associated with one exact request ID."""
+        if not request_id.strip():
+            raise ValueError("request_id must not be empty")
+        if not self.path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(self.path, timeout=5)) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    f"SELECT {', '.join(self._COLUMNS)} FROM audit_records "
+                    "WHERE request_id = ? ORDER BY rowid ASC",
+                    (request_id,),
+                ).fetchall()
+            return [dict(row) for row in rows]
+        except (OSError, sqlite3.Error) as error:
+            raise AuditLogError(
+                f"Could not read audit history for request {request_id}: {error}"
+            ) from error
+
     @staticmethod
     def _create_schema(connection: sqlite3.Connection) -> None:
         connection.execute(

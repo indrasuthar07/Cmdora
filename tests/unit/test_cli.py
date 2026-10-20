@@ -110,6 +110,79 @@ def test_history_command_displays_sqlite_audit_fields() -> None:
     assert "stdout: ## main" in result.output
 
 
+def test_history_last_limits_records_to_the_most_recent_number() -> None:
+    from cmdora.storage import AuditLog, AuditRecord
+
+    log = AuditLog()
+    for index in range(3):
+        log.append(
+            AuditRecord(
+                policy_decision="allowed",
+                approval_status="not_required",
+                executed_command=f"command-{index}",
+                exit_code=0,
+                duration_seconds=0.01,
+                stdout="",
+                stderr="",
+                final_status="succeeded",
+                request_id=f"request-{index}",
+                user_request=f"request text {index}",
+            )
+        )
+
+    result = runner.invoke(app, ["history", "--last", "2"])
+
+    assert result.exit_code == 0
+    assert "request text 0" not in result.output
+    assert "request text 1" in result.output
+    assert "request text 2" in result.output
+
+
+def test_history_show_displays_all_events_for_exact_request_id() -> None:
+    from cmdora.storage import AuditLog, AuditRecord
+
+    log = AuditLog()
+    for request_id, command in (
+        ("shared-request-id", "git add --all"),
+        ("shared-request-id", "git commit -m update"),
+        ("other-request-id", "git status"),
+    ):
+        log.append(
+            AuditRecord(
+                policy_decision="allowed",
+                approval_status="not_required",
+                executed_command=command,
+                exit_code=0,
+                duration_seconds=0.01,
+                stdout="",
+                stderr="",
+                final_status="succeeded",
+                request_id=request_id,
+                user_request="commit my changes",
+            )
+        )
+
+    result = runner.invoke(app, ["history", "show", "shared-request-id"])
+
+    assert result.exit_code == 0
+    assert "git add --all" in result.output
+    assert "git commit -m update" in result.output
+    assert "git status" not in result.output
+
+
+def test_history_show_reports_unknown_request_id() -> None:
+    result = runner.invoke(app, ["history", "show", "unknown-id"])
+
+    assert result.exit_code == 1
+    assert "No history found for request ID: unknown-id" in result.output
+
+
+def test_history_last_must_be_positive() -> None:
+    result = runner.invoke(app, ["history", "--last", "0"])
+
+    assert result.exit_code != 0
+
+
 def test_natural_language_request_accepts_execution_flags() -> None:
     result = runner.invoke(
         app,

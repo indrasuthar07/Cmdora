@@ -40,4 +40,5 @@ the current workspace.
 Cmdora records deterministic CLI actions in SQLite at `%APPDATA%\CmdoraAI\history.db` on
 Windows. `Cmdora history` shows the latest records, including request ID, timestamp, user
 request, workspace, LLM plan (when available), policy and approval decisions, command result,
-duration, and redacted output.
+duration, and redacted output. Use `Cmdora history --last 10` to choose how many recent rows to
+show, or `Cmdora history show <request-id>` to inspect every command associated with one request.
