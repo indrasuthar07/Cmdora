@@ -54,6 +54,22 @@ def test_config_init_creates_default_user_configuration(
     }
 
 
+def test_config_init_project_creates_workspace_scoped_configuration(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["config", "init", "--project"])
+
+    assert result.exit_code == 0
+    config_path = tmp_path / ".Cmdora" / "config.toml"
+    assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
+        "autonomy_mode": "git",
+        "allowed_write_directories": ["src", "tests"],
+        "protected_branches": ["main", "master"],
+    }
+    assert "Created project configuration" in result.output
+
+
 def test_history_command_is_available() -> None:
     result = runner.invoke(app, ["history"])
 

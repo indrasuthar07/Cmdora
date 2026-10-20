@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from time import monotonic
 
+from cmdora.config import RepositoryConfigStore, validate_repository_write_path
 from cmdora.executor.powershell import (
     DEFAULT_MAX_OUTPUT_CHARACTERS,
     DEFAULT_TIMEOUT_SECONDS,
@@ -84,9 +85,8 @@ class DeterministicOperations:
 
     def create_file(self, path: Path | str) -> Path:
         """Create an empty file within the workspace without overwriting anything."""
-        target = resolve_workspace_path(self.workspace_path, path)
-        if target == self.workspace_path:
-            raise ValueError("A file path inside the workspace is required")
+        repository_config = RepositoryConfigStore(self.workspace_path).load()
+        target = validate_repository_write_path(self.workspace_path, path, repository_config)
         if target.exists() or target.is_symlink():
             raise FileExistsError(f"File already exists: {target}")
 

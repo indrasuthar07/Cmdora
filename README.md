@@ -26,3 +26,11 @@ No need to memorize the exact syntax. Just describe the task.
 Run `Cmdora config init` to create the default user configuration. On Windows it is stored at
 `%APPDATA%\CmdoraAI\config.toml`, outside the repository. The file contains model, timeout,
 output-size, autonomy-mode, and protected-branch settings; API credentials are not stored there.
+
+## Project configuration
+
+Run `Cmdora config init --project` from a workspace to create `.Cmdora/config.toml` there.
+Project settings stay inside that workspace and include an autonomy mode, allowed write
+directories (`src` and `tests` by default), and protected Git branches. File creation is
+restricted to the configured directories; without a project config, writes remain bounded to
+the current workspace.

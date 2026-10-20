@@ -11,9 +11,13 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from cmdora import __version__
-from cmdora.config import ApplicationConfigStore, ConfigError
+from cmdora.config import (
+    ApplicationConfigStore,
+    ConfigError,
+    RepositoryConfigStore,
+    validate_repository_write_path,
+)
 from cmdora.executor import CommandResult, DeterministicOperations
-from cmdora.executor.workspace import resolve_workspace_path
 
 
 @dataclass(frozen=True)
@@ -102,9 +106,8 @@ def _display_path(root: Path, target: Path) -> str:
 
 
 def _dry_run_create_file(path: str, workspace_path: Path, json_output: bool) -> None:
-    target = resolve_workspace_path(workspace_path, path)
-    if target == workspace_path:
-        raise ValueError("A file path inside the workspace is required")
+    config = RepositoryConfigStore(workspace_path).load()
+    target = validate_repository_write_path(workspace_path, path, config)
     if target.exists() or target.is_symlink():
         raise FileExistsError(f"File already exists: {target}")
     relative_path = _display_path(workspace_path, target)
@@ -333,9 +336,14 @@ def main(
 
 
 @config_app.command("init")
-def config_init() -> None:
-    """Create the user-level configuration file with default settings."""
-    store = ApplicationConfigStore()
+def config_init(
+    project: Annotated[
+        bool,
+        typer.Option("--project", help="Initialize config in .Cmdora/ for the current workspace."),
+    ] = False,
+) -> None:
+    """Create user-level config, or project-scoped config with --project."""
+    store = RepositoryConfigStore(Path.cwd()) if project else ApplicationConfigStore()
     try:
         created = store.initialize()
     except ConfigError as error:
@@ -343,7 +351,8 @@ def config_init() -> None:
         raise typer.Exit(code=1) from error
 
     if created:
-        console.print(f"Created user configuration: {store.config_path}")
+        scope = "project" if project else "user"
+        console.print(f"Created {scope} configuration: {store.config_path}")
     else:
         console.print(f"Configuration already exists; left unchanged: {store.config_path}")
 
