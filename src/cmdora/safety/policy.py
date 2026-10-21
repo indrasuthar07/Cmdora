@@ -10,7 +10,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from cmdora.config import RepositoryConfig, RepositoryConfigStore, validate_repository_write_path
-from cmdora.executor.workspace import resolve_workspace_path
+from cmdora.safety.block_rules import blocked_command_reason
+from cmdora.safety.paths import UnsafePathError, validate_workspace_path
 
 
 class CommandCategory(StrEnum):
@@ -99,6 +100,10 @@ def assess_command(
         return _assessment(
             CommandCategory.BLOCKED, False, "Empty commands are not allowed.", original
         )
+
+    blocked_reason = blocked_command_reason(normalized)
+    if blocked_reason is not None:
+        return _assessment(CommandCategory.BLOCKED, False, blocked_reason, normalized)
 
     # This one fixed pipeline is supported because it is a read-only date filter. Arbitrary
     # PowerShell pipelines, script blocks, and statement chaining are not parsed as safe.
@@ -208,8 +213,8 @@ def _assess_read(
                 " ".join([executable, *arguments]),
             )
         try:
-            resolved = resolve_workspace_path(workspace, requested_path, must_exist=True)
-        except (OSError, ValueError):
+            resolved = validate_workspace_path(workspace, requested_path, must_exist=True)
+        except (OSError, UnsafePathError):
             return _assessment(
                 category,
                 False,
@@ -251,8 +256,8 @@ def _assess_read(
                 " ".join([executable, *arguments]),
             )
         try:
-            requested_directory = resolve_workspace_path(workspace, path_value, must_exist=True)
-        except (OSError, ValueError):
+            requested_directory = validate_workspace_path(workspace, path_value, must_exist=True)
+        except (OSError, UnsafePathError):
             return _assessment(
                 category,
                 False,
@@ -295,8 +300,8 @@ def _assess_read(
                 value = arguments[index]
                 if parameter == "-path":
                     try:
-                        resolved_path = resolve_workspace_path(workspace, value, must_exist=True)
-                    except (OSError, ValueError):
+                        resolved_path = validate_workspace_path(workspace, value, must_exist=True)
+                    except (OSError, UnsafePathError):
                         return _assessment(
                             category,
                             False,
@@ -312,8 +317,8 @@ def _assess_read(
                         )
         else:
             try:
-                resolved_path = resolve_workspace_path(workspace, argument, must_exist=True)
-            except (OSError, ValueError):
+                resolved_path = validate_workspace_path(workspace, argument, must_exist=True)
+            except (OSError, UnsafePathError):
                 return _assessment(
                     category,
                     False,
@@ -437,8 +442,8 @@ def _assess_git(
             )
         for path in paths:
             try:
-                resolved = resolve_workspace_path(workspace, path, must_exist=True)
-            except (OSError, ValueError):
+                resolved = validate_workspace_path(workspace, path, must_exist=True)
+            except (OSError, UnsafePathError):
                 return _assessment(
                     CommandCategory.GIT_STAGE,
                     False,
@@ -544,8 +549,8 @@ def _resolve_approved_read_directory(
     approved_read_directories: Iterable[Path | str],
 ) -> Path | None:
     try:
-        directory = resolve_workspace_path(workspace, requested_path, must_exist=True)
-    except (OSError, ValueError):
+        directory = validate_workspace_path(workspace, requested_path, must_exist=True)
+    except (OSError, UnsafePathError):
         return None
     if directory == workspace or not directory.is_dir() or _has_secret_path_component(directory):
         return None

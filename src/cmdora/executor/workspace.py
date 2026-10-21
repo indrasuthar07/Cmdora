@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from cmdora.workspace_paths import validate_workspace_path
+
 
 def resolve_workspace(workspace_path: Path | str) -> Path:
     """Resolve and validate an existing workspace directory."""
@@ -17,12 +19,5 @@ def resolve_workspace_path(
     *,
     must_exist: bool = False,
 ) -> Path:
-    """Resolve a target and reject it if it escapes the selected workspace."""
-    target = Path(target_path).expanduser()
-    if not target.is_absolute():
-        target = workspace_path / target
-
-    resolved = target.resolve(strict=must_exist)
-    if not resolved.is_relative_to(workspace_path):
-        raise ValueError(f"Path is outside the selected workspace: {target_path}")
-    return resolved
+    """Resolve a non-protected target inside the selected workspace."""
+    return validate_workspace_path(workspace_path, target_path, must_exist=must_exist)
