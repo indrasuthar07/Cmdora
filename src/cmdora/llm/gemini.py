@@ -6,15 +6,17 @@ import json
 import os
 import time
 from collections.abc import Callable
-from typing import Any
+from pathlib import Path
+from typing import Any, get_args
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
 from httpx import TransportError
 from pydantic import ValidationError
 
 from cmdora.context import SafeContext, sanitize_model_context
-from cmdora.schemas import ActionPlan
+from cmdora.schemas import ActionKind, ActionPlan
 
 DEFAULT_MODEL = "gemini-3.8-flash"
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
@@ -83,6 +85,7 @@ class GeminiPlanner:
         max_backoff_seconds: float = 4.0,
         sleep: Callable[[float], None] = time.sleep,
         environ: dict[str, str] | None = None,
+        dotenv_path: Path | None = None,
     ) -> None:
         if not model.strip():
             raise ValueError("model must not be empty")
@@ -97,11 +100,16 @@ class GeminiPlanner:
         self._max_backoff_seconds = max_backoff_seconds
         self._sleep = sleep
         self._environ = environ
+        self._dotenv_path = dotenv_path
 
     def create_plan(self, request: str, context: SafeContext) -> ActionPlan:
         """Send only the redacted request and allowlisted context to Gemini."""
         if not isinstance(context, SafeContext):
             raise TypeError("context must be a SafeContext")
+        if self._environ is None:
+            # A shell-provided key is intentionally preferred over a local .env value.
+            # The file is read only to configure the client; its contents are never sent to Gemini.
+            load_dotenv(dotenv_path=self._dotenv_path or Path.cwd() / ".env", override=False)
         environ = self._environ if self._environ is not None else os.environ
         api_key = environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
@@ -118,9 +126,8 @@ class GeminiPlanner:
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        response_schema=ActionPlan,
+                        response_json_schema=_gemini_response_schema(),
                         system_instruction=SYSTEM_PROMPT,
-                        temperature=0,
                     ),
                 )
                 plan = _parse_response(response)
@@ -173,6 +180,38 @@ def _build_prompt(request: str, context: SafeContext) -> str:
     )
 
 
+def _gemini_response_schema() -> dict[str, object]:
+    """Return a compact Gemini-compatible JSON Schema, validated locally by ActionPlan."""
+    step_properties: dict[str, object] = {
+        "id": {"type": "string"},
+        "kind": {"type": "string", "enum": list(get_args(ActionKind))},
+        "command": {"type": ["string", "null"]},
+        "purpose": {"type": "string"},
+        "expected_effect": {"type": "string"},
+        "requested_paths": {"type": "array", "items": {"type": "string"}},
+        "risk_hint": {"type": "string"},
+    }
+    step_schema: dict[str, object] = {
+        "type": "object",
+        "properties": step_properties,
+        "required": list(step_properties),
+        "additionalProperties": False,
+    }
+    properties: dict[str, object] = {
+        "intent": {"type": "string"},
+        "summary": {"type": "string"},
+        "needs_clarification": {"type": "boolean"},
+        "clarifying_question": {"type": ["string", "null"]},
+        "steps": {"type": "array", "items": step_schema},
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
 def _parse_response(response: Any) -> ActionPlan:
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, ActionPlan):
@@ -208,6 +247,11 @@ def _translate_api_error(error: errors.APIError, model: str) -> PlannerError:
         return RateLimitError(
             "Gemini rate or quota limit reached. Wait before trying again or check your API quota."
         )
+    if error.code == 402:
+        return PlannerError(
+            "Gemini requires an available billing or prepay balance for this API key/project. "
+            "Check the project's billing status before retrying."
+        )
     if (
         error.code == 404
         or "not_found" in status
@@ -218,6 +262,23 @@ def _translate_api_error(error: errors.APIError, model: str) -> PlannerError:
         )
     if error.code in {408, 500, 502, 503, 504}:
         return PlannerNetworkError("Gemini is temporarily unavailable. Please try again shortly.")
+    if error.code == 400:
+        reason = status or "INVALID_ARGUMENT"
+        detail = sanitize_model_context((error.message or "").strip())
+        if len(detail) > 300:
+            detail = detail[:297] + "..."
+        if "<html" in detail.lower() or "<!doctype html" in detail.lower():
+            return PlannerError(
+                "Gemini returned an HTML 400 instead of its normal JSON API error. Check "
+                "HTTP(S)_PROXY settings, network filtering, and access to "
+                "generativelanguage.googleapis.com. The key and request contents were not logged."
+            )
+        detail_suffix = f" Details: {detail}" if detail else ""
+        return PlannerError(
+            f"Gemini rejected the planning request ({error.code} {reason}). Check that the "
+            "configured model supports this structured-output schema and request configuration."
+            f"{detail_suffix}"
+        )
     return PlannerError("Gemini could not create a plan. Check your API configuration and retry.")
 
 

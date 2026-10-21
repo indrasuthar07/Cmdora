@@ -141,7 +141,10 @@ def _handle_planned_request(
     """Plan an otherwise unsupported request and record it without execution."""
     workspace = (workspace_path or Path.cwd()).resolve()
     app_config = ApplicationConfigStore().load()
-    active_planner = planner or GeminiPlanner(model=app_config.model)
+    active_planner = planner or GeminiPlanner(
+        model=app_config.model,
+        dotenv_path=workspace / ".env",
+    )
     context = _safe_planning_context(workspace)
     plan = active_planner.create_plan(request, context)
     _record_audit(
