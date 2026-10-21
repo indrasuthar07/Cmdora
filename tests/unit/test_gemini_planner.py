@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from fakes import FakeGeminiClient, FakePlanner
+from google.genai.errors import APIError
 
 from cmdora.cli.main import RequestOptions, _handle_planned_request
 from cmdora.context import SafeContext
@@ -17,6 +18,8 @@ from cmdora.llm.gemini import (
     GeminiPlanner,
     InvalidPlanResponseError,
     MissingAPIKeyError,
+    PlannerError,
+    _gemini_response_schema,
 )
 from cmdora.schemas import ActionPlan
 
@@ -81,8 +84,12 @@ def test_gemini_returns_a_schema_valid_plan_with_system_rules_and_redacted_input
     call = client.models.calls[0]
     config = call["config"]
     assert config.response_mime_type == "application/json"
-    assert config.response_schema is ActionPlan
+    assert config.response_schema is None
+    assert config.response_json_schema == _gemini_response_schema()
+    assert "$defs" not in str(config.response_json_schema)
+    assert "anyOf" not in str(config.response_json_schema)
     assert config.system_instruction == SYSTEM_PROMPT
+    assert config.temperature is None
     assert "PowerShell syntax only" in config.system_instruction
     assert "Never propose destructive commands" in config.system_instruction
     assert "request-secret" not in call["contents"]
@@ -107,11 +114,58 @@ def test_gemini_rejects_action_not_in_supported_actions(monkeypatch: pytest.Monk
         GeminiPlanner(client=client).create_plan("create notes.txt", make_context())
 
 
-def test_missing_key_has_setup_message(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_key_has_setup_message(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     with pytest.raises(MissingAPIKeyError, match="Set the GEMINI_API_KEY"):
-        GeminiPlanner(client=FakeGeminiClient()).create_plan("show git status", make_context())
+        GeminiPlanner(
+            client=FakeGeminiClient(), dotenv_path=tmp_path / "missing.env"
+        ).create_plan("show git status", make_context())
+
+
+def test_gemini_loads_key_from_workspace_dotenv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("GEMINI_API_KEY=key-from-dotenv\n", encoding="utf-8")
+    client = FakeGeminiClient(FakeResponse(text=valid_plan_json()))
+
+    plan = GeminiPlanner(client=client, dotenv_path=dotenv_path).create_plan(
+        "create notes.txt", make_context()
+    )
+
+    assert plan.steps[0].kind == "create_file"
+
+
+def test_bad_request_error_identifies_request_or_schema_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-unit-test")
+    api_error = APIError(
+        400,
+        {"error": {"status": "INVALID_ARGUMENT", "message": "bad config"}},
+    )
+
+    with pytest.raises(PlannerError, match="400 INVALID_ARGUMENT.*bad config"):
+        GeminiPlanner(client=FakeGeminiClient(api_error)).create_plan(
+            "show git status", make_context()
+        )
+
+
+def test_html_bad_request_suggests_network_or_proxy_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-unit-test")
+    html_error = APIError(
+        400,
+        {"error": {"status": "BAD_REQUEST", "message": "<html><title>Error 400</title>"}},
+    )
+
+    with pytest.raises(PlannerError, match=r"HTML 400.*HTTP\(S\)_PROXY"):
+        GeminiPlanner(client=FakeGeminiClient(html_error)).create_plan(
+            "show git status", make_context()
+        )
 
 
 def test_fake_planner_implements_provider_protocol_and_can_supply_unsafe_plan() -> None:
