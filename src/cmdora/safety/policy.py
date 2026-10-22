@@ -8,10 +8,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cmdora.config import RepositoryConfig, RepositoryConfigStore, validate_repository_write_path
 from cmdora.safety.block_rules import blocked_command_reason
+from cmdora.safety.git_safety import GitSafetyValidator
 from cmdora.safety.paths import UnsafePathError, validate_workspace_path
+from cmdora.safety.redaction import redact_sensitive_text
 
 
 class CommandCategory(StrEnum):
@@ -28,14 +33,53 @@ class CommandCategory(StrEnum):
     BLOCKED = "BLOCKED"
 
 
+class PolicyDecision(BaseModel):
+    """A serializable, user-facing result of a local policy evaluation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    allowed: bool
+    risk_level: Literal["safe", "caution", "high", "blocked"]
+    requires_confirmation: bool
+    reasons: list[str] = Field(min_length=1)
+    sanitized_command: str | None
+
+    @model_validator(mode="after")
+    def _validate_consistency(self) -> PolicyDecision:
+        if self.risk_level == "blocked" and self.allowed:
+            raise ValueError("Blocked decisions cannot be allowed.")
+        if not self.allowed and self.requires_confirmation:
+            raise ValueError("Blocked decisions do not request confirmation.")
+        if (
+            self.allowed
+            and self.risk_level in {"caution", "high"}
+            and not self.requires_confirmation
+        ):
+            raise ValueError("Caution and high-risk actions require confirmation.")
+        return self
+
+
 @dataclass(frozen=True)
 class CommandAssessment:
     """Classification and local allowlist result for one proposed command."""
 
     category: CommandCategory
-    allowed: bool
-    reason: str
-    command: str
+    decision: PolicyDecision
+
+    @property
+    def allowed(self) -> bool:
+        """Compatibility shortcut for the structured policy decision."""
+        return self.decision.allowed
+
+    @property
+    def reason(self) -> str:
+        """The primary policy reason, retained for existing callers."""
+        return self.decision.reasons[0]
+
+    @property
+    def command(self) -> str:
+        """The redacted command, or an empty value when unavailable."""
+        return self.decision.sanitized_command or ""
 
 
 _DESTRUCTIVE_COMMANDS = {
@@ -86,6 +130,8 @@ def assess_command(
     current_branch: str | None = None,
     protected_branches: Iterable[str] = ("main", "master"),
     explicit_push_request: bool = False,
+    expected_origin_url: str | None = None,
+    autonomy_mode: str = "off",
     repository_config: RepositoryConfig | None = None,
 ) -> CommandAssessment:
     """Classify a command and allow only supported, narrowly parsed operations.
@@ -141,7 +187,13 @@ def assess_command(
     executable = tokens[0].casefold()
     if executable == "git":
         return _assess_git(
-            tokens[1:], workspace, current_branch, set(protected_branches), explicit_push_request
+            tokens[1:],
+            workspace,
+            current_branch,
+            set(protected_branches),
+            explicit_push_request,
+            expected_origin_url,
+            autonomy_mode,
         )
 
     if executable in _DESTRUCTIVE_COMMANDS:
@@ -396,6 +448,8 @@ def _assess_git(
     current_branch: str | None,
     protected_branches: set[str],
     explicit_push_request: bool,
+    expected_origin_url: str | None,
+    autonomy_mode: str,
 ) -> CommandAssessment:
     if not arguments:
         return _assessment(CommandCategory.BLOCKED, False, "A Git subcommand is required.", "git")
@@ -461,21 +515,18 @@ def _assess_git(
             CommandCategory.GIT_STAGE, True, "Stages only explicit workspace file paths.", "git add"
         )
     if subcommand == "commit":
-        if (
-            len(operands) == 2
-            and operands[0].casefold() in {"-m", "--message"}
-            and _unquote(operands[1]).strip()
-        ):
-            return _assessment(
-                CommandCategory.GIT_COMMIT,
-                True,
-                "Creates a commit with the supplied message.",
-                "git commit",
-            )
+        message = (
+            _unquote(operands[1])
+            if len(operands) == 2 and operands[0].casefold() in {"-m", "--message"}
+            else None
+        )
+        validation = GitSafetyValidator(workspace).validate_commit(
+            message, autonomy_mode=autonomy_mode
+        )
         return _assessment(
             CommandCategory.GIT_COMMIT,
-            False,
-            "Git commit requires exactly one explicit -m/--message value.",
+            validation.allowed,
+            validation.reasons,
             "git commit",
         )
     if subcommand == "push":
@@ -486,31 +537,16 @@ def _assess_git(
                 "Only 'git push origin HEAD' is eligible for policy checks.",
                 "git push",
             )
-        if not explicit_push_request:
-            return _assessment(
-                CommandCategory.GIT_PUSH,
-                False,
-                "A push requires an explicit user request.",
-                "git push origin HEAD",
-            )
-        if current_branch is None:
-            return _assessment(
-                CommandCategory.GIT_PUSH,
-                False,
-                "Cannot push while the current branch is unknown or detached.",
-                "git push origin HEAD",
-            )
-        if current_branch in protected_branches:
-            return _assessment(
-                CommandCategory.GIT_PUSH,
-                False,
-                f"Pushes to protected branch '{current_branch}' are blocked.",
-                "git push origin HEAD",
-            )
+        validation = GitSafetyValidator(workspace).validate_push(
+            explicit_push_request=explicit_push_request,
+            protected_branches=protected_branches,
+            expected_origin_url=expected_origin_url,
+            expected_branch=current_branch,
+        )
         return _assessment(
             CommandCategory.GIT_PUSH,
-            True,
-            "Pushes the current non-protected branch to origin.",
+            validation.allowed,
+            validation.reasons,
             "git push origin HEAD",
         )
 
@@ -594,9 +630,26 @@ def _unquote(value: str) -> str:
 
 
 def _assessment(
-    category: CommandCategory, allowed: bool, reason: str, command: str
+    category: CommandCategory, allowed: bool, reason: str | tuple[str, ...], command: str
 ) -> CommandAssessment:
-    return CommandAssessment(category, allowed, reason, command)
+    reasons = [reason] if isinstance(reason, str) else list(reason)
+    risk_level: Literal["safe", "caution", "high", "blocked"]
+    if not allowed:
+        risk_level = "blocked"
+    elif category == CommandCategory.READ_ONLY:
+        risk_level = "safe"
+    elif category == CommandCategory.GIT_PUSH:
+        risk_level = "high"
+    else:
+        risk_level = "caution"
+    decision = PolicyDecision(
+        allowed=allowed,
+        risk_level=risk_level,
+        requires_confirmation=allowed and risk_level in {"caution", "high"},
+        reasons=reasons,
+        sanitized_command=redact_sensitive_text(command),
+    )
+    return CommandAssessment(category, decision)
 
 
-__all__ = ["CommandAssessment", "CommandCategory", "assess_command"]
+__all__ = ["CommandAssessment", "CommandCategory", "PolicyDecision", "assess_command"]

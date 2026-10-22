@@ -274,6 +274,7 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "cmdora@example.test"], cwd=tmp_path, check=True)
     (tmp_path / "feature.txt").write_text("feature\n", encoding="utf-8")
+    subprocess.run(["git", "add", "feature.txt"], cwd=tmp_path, check=True)
     monkeypatch.chdir(tmp_path)
 
     status = runner.invoke(app, ["git status"])
@@ -297,7 +298,6 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()
     assert [record["executed_command"] for record in records] == [
         "git status --short --branch",
-        "git add --all -- .",
         "git commit -m add feature",
     ]
     assert all(record["policy_decision"] == "allowed" for record in records)
@@ -305,5 +305,22 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     assert all(record["user_request"] for record in records)
     assert all(record["workspace_identifier"] == str(tmp_path) for record in records)
     assert all(record["llm_plan"] is None for record in records)
-    assert records[0]["request_id"] != records[-1]["request_id"]
-    assert records[1]["request_id"] == records[2]["request_id"]
+    assert records[0]["request_id"] != records[1]["request_id"]
+
+
+def test_cli_blocks_an_unstaged_commit_before_calling_git(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    subprocess.run(["git", "init", "-b", "feature/safety"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "cmdora@example.test"], cwd=tmp_path, check=True)
+    (tmp_path / "unstaged.txt").write_text("not staged\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    commit = mocker.patch("cmdora.executor.operations.DeterministicOperations.git_commit")
+
+    result = runner.invoke(app, ["commit my changes with message should not run"])
+
+    assert result.exit_code == 1
+    assert "Blocked:" in result.output
+    assert "No files are staged" in result.output
+    commit.assert_not_called()

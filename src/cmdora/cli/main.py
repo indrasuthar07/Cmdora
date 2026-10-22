@@ -23,6 +23,12 @@ from cmdora.context import SafeContext
 from cmdora.executor import CommandResult, DeterministicOperations
 from cmdora.llm import PlannerProvider
 from cmdora.llm.gemini import GeminiPlanner, PlannerError
+from cmdora.safety import (
+    GitSafetyValidator,
+    PolicyDecision,
+    assess_command,
+    format_policy_decision,
+)
 from cmdora.schemas import ActionPlan
 from cmdora.storage import AuditLog, AuditLogError, AuditRecord
 
@@ -128,6 +134,32 @@ def _display_action_plan(plan: ActionPlan, *, json_output: bool) -> None:
         console.print(f"   Effect: {step.expected_effect}")
         console.print(f"   Risk: {step.risk_hint}")
     console.print("Plan only — no proposed action was executed.")
+
+
+def _emit_blocked_policy(
+    *,
+    decision: PolicyDecision,
+    options: RequestOptions,
+    request_id: str,
+    user_request: str,
+    workspace_path: Path,
+) -> None:
+    """Record and display a rejected policy decision before any executor call."""
+    _record_audit(
+        command=None,
+        exit_code=None,
+        duration_seconds=0,
+        final_status="blocked",
+        policy_decision=decision.model_dump_json(),
+        approval_status="not_applicable",
+        request_id=request_id,
+        user_request=user_request,
+        workspace_identifier=workspace_path,
+    )
+    if options.json_output:
+        _emit_json({"status": "blocked", "policy": decision.model_dump(mode="json")})
+    else:
+        typer.echo(format_policy_decision(decision), err=True)
 
 
 def _handle_planned_request(
@@ -451,24 +483,28 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             raise ValueError("Please provide a non-empty commit message.")
         if options.dry_run:
             _dry_run_message(
-                f"git add --all -- .\ngit commit -m {_powershell_literal(message)}",
-                "Stages workspace changes and commits them with the supplied message.",
+                f"git commit -m {_powershell_literal(message)}",
+                "Commits the files already staged in the current workspace.",
                 options.json_output,
                 request_id=request_id,
                 user_request=request,
                 workspace_path=workspace_path,
             )
             return True
-        add_result = operations.git_add_all()
-        _record_command_result(add_result, request_id=request_id, user_request=request)
-        if not add_result.succeeded:
-            _emit_command_result(
-                add_result,
-                options.json_output,
+        policy = assess_command(
+            f"git commit -m {_powershell_literal(message)}",
+            workspace_path,
+            autonomy_mode=options.autonomy or "off",
+        )
+        if not policy.allowed:
+            _emit_blocked_policy(
+                decision=policy.decision,
+                options=options,
                 request_id=request_id,
                 user_request=request,
-                record_audit=False,
+                workspace_path=workspace_path,
             )
+            raise typer.Exit(code=1)
         commit_result = operations.git_commit(message)
         _emit_command_result(
             commit_result,
@@ -493,6 +529,24 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 workspace_path=workspace_path,
             )
         else:
+            origin_url = GitSafetyValidator(workspace_path).inspect().origin_url
+            repository_config = RepositoryConfigStore(workspace_path).load()
+            policy = assess_command(
+                "git push origin HEAD",
+                workspace_path,
+                explicit_push_request=True,
+                expected_origin_url=origin_url,
+                protected_branches=repository_config.protected_branches,
+            )
+            if not policy.allowed:
+                _emit_blocked_policy(
+                    decision=policy.decision,
+                    options=options,
+                    request_id=request_id,
+                    user_request=request,
+                    workspace_path=workspace_path,
+                )
+                raise typer.Exit(code=1)
             _emit_command_result(
                 operations.git_push(),
                 options.json_output,
