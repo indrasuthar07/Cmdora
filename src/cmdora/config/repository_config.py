@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from cmdora.config.app_config import ConfigError
+from cmdora.workspace_paths import validate_workspace_path
 
 
 class RepositoryConfig(BaseModel):
@@ -123,13 +124,7 @@ def validate_repository_write_path(
 
 
 def _resolve_project_path(workspace: Path, path: Path | str) -> Path:
-    target = Path(path).expanduser()
-    if not target.is_absolute():
-        target = workspace / target
-    resolved = target.resolve(strict=False)
-    if not resolved.is_relative_to(workspace):
-        raise ValueError(f"Path is outside the selected workspace: {path}")
-    return resolved
+    return validate_workspace_path(workspace, path)
 
 
 def _serialize_repository_config(config: RepositoryConfig) -> str:

@@ -23,6 +23,12 @@ from cmdora.context import SafeContext
 from cmdora.executor import CommandResult, DeterministicOperations
 from cmdora.llm import PlannerProvider
 from cmdora.llm.gemini import GeminiPlanner, PlannerError
+from cmdora.safety import (
+    GitSafetyValidator,
+    PolicyDecision,
+    assess_command,
+    format_policy_decision,
+)
 from cmdora.schemas import ActionPlan
 from cmdora.storage import AuditLog, AuditLogError, AuditRecord
 
@@ -71,6 +77,25 @@ console = Console()
 
 def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, default=str))
+
+
+def _planner_dotenv_path(workspace_path: Path) -> Path:
+    """Find a local API-key file without searching outside known Cmdora locations.
+
+    A selected workspace owns its own configuration.  When running Cmdora from a source checkout
+    against a disposable demo workspace, the checkout's ``.env`` is a deliberate fallback so the
+    user does not need to copy an API key into every demo directory.  Installed packages retain
+    the workspace-only behaviour because they have no checked-out ``pyproject.toml``.
+    """
+    workspace_dotenv = workspace_path / ".env"
+    if workspace_dotenv.is_file():
+        return workspace_dotenv
+
+    checkout_root = Path(__file__).resolve().parents[3]
+    checkout_dotenv = checkout_root / ".env"
+    if (checkout_root / "pyproject.toml").is_file() and checkout_dotenv.is_file():
+        return checkout_dotenv
+    return workspace_dotenv
 
 
 def _safe_planning_context(workspace_path: Path) -> SafeContext:
@@ -130,6 +155,32 @@ def _display_action_plan(plan: ActionPlan, *, json_output: bool) -> None:
     console.print("Plan only — no proposed action was executed.")
 
 
+def _emit_blocked_policy(
+    *,
+    decision: PolicyDecision,
+    options: RequestOptions,
+    request_id: str,
+    user_request: str,
+    workspace_path: Path,
+) -> None:
+    """Record and display a rejected policy decision before any executor call."""
+    _record_audit(
+        command=None,
+        exit_code=None,
+        duration_seconds=0,
+        final_status="blocked",
+        policy_decision=decision.model_dump_json(),
+        approval_status="not_applicable",
+        request_id=request_id,
+        user_request=user_request,
+        workspace_identifier=workspace_path,
+    )
+    if options.json_output:
+        _emit_json({"status": "blocked", "policy": decision.model_dump(mode="json")})
+    else:
+        typer.echo(format_policy_decision(decision), err=True)
+
+
 def _handle_planned_request(
     request: str,
     options: RequestOptions,
@@ -143,7 +194,7 @@ def _handle_planned_request(
     app_config = ApplicationConfigStore().load()
     active_planner = planner or GeminiPlanner(
         model=app_config.model,
-        dotenv_path=workspace / ".env",
+        dotenv_path=_planner_dotenv_path(workspace),
     )
     context = _safe_planning_context(workspace)
     plan = active_planner.create_plan(request, context)
@@ -451,24 +502,28 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             raise ValueError("Please provide a non-empty commit message.")
         if options.dry_run:
             _dry_run_message(
-                f"git add --all -- .\ngit commit -m {_powershell_literal(message)}",
-                "Stages workspace changes and commits them with the supplied message.",
+                f"git commit -m {_powershell_literal(message)}",
+                "Commits the files already staged in the current workspace.",
                 options.json_output,
                 request_id=request_id,
                 user_request=request,
                 workspace_path=workspace_path,
             )
             return True
-        add_result = operations.git_add_all()
-        _record_command_result(add_result, request_id=request_id, user_request=request)
-        if not add_result.succeeded:
-            _emit_command_result(
-                add_result,
-                options.json_output,
+        policy = assess_command(
+            f"git commit -m {_powershell_literal(message)}",
+            workspace_path,
+            autonomy_mode=options.autonomy or "off",
+        )
+        if not policy.allowed:
+            _emit_blocked_policy(
+                decision=policy.decision,
+                options=options,
                 request_id=request_id,
                 user_request=request,
-                record_audit=False,
+                workspace_path=workspace_path,
             )
+            raise typer.Exit(code=1)
         commit_result = operations.git_commit(message)
         _emit_command_result(
             commit_result,
@@ -493,6 +548,24 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 workspace_path=workspace_path,
             )
         else:
+            origin_url = GitSafetyValidator(workspace_path).inspect().origin_url
+            repository_config = RepositoryConfigStore(workspace_path).load()
+            policy = assess_command(
+                "git push origin HEAD",
+                workspace_path,
+                explicit_push_request=True,
+                expected_origin_url=origin_url,
+                protected_branches=repository_config.protected_branches,
+            )
+            if not policy.allowed:
+                _emit_blocked_policy(
+                    decision=policy.decision,
+                    options=options,
+                    request_id=request_id,
+                    user_request=request,
+                    workspace_path=workspace_path,
+                )
+                raise typer.Exit(code=1)
             _emit_command_result(
                 operations.git_push(),
                 options.json_output,
