@@ -10,7 +10,7 @@ import pytest
 from fakes import FakeGeminiClient, FakePlanner
 from google.genai.errors import APIError
 
-from cmdora.cli.main import RequestOptions, _handle_planned_request
+from cmdora.cli.main import RequestOptions, _handle_planned_request, _planner_dotenv_path
 from cmdora.context import SafeContext
 from cmdora.llm import PlannerProvider
 from cmdora.llm.gemini import (
@@ -136,6 +136,21 @@ def test_gemini_loads_key_from_workspace_dotenv(
     )
 
     assert plan.steps[0].kind == "create_file"
+
+
+def test_cli_dotenv_path_uses_workspace_dotenv_when_present(tmp_path: Path) -> None:
+    workspace_dotenv = tmp_path / ".env"
+    workspace_dotenv.write_text("GEMINI_API_KEY=workspace-key\n", encoding="utf-8")
+
+    assert _planner_dotenv_path(tmp_path) == workspace_dotenv
+
+
+def test_cli_dotenv_path_falls_back_to_checkout_dotenv_for_demo_workspace(tmp_path: Path) -> None:
+    path = _planner_dotenv_path(tmp_path)
+
+    assert path.name == ".env"
+    assert path.is_file()
+    assert (path.parent / "pyproject.toml").is_file()
 
 
 def test_bad_request_error_identifies_request_or_schema_rejection(

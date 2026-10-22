@@ -79,6 +79,25 @@ def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, default=str))
 
 
+def _planner_dotenv_path(workspace_path: Path) -> Path:
+    """Find a local API-key file without searching outside known Cmdora locations.
+
+    A selected workspace owns its own configuration.  When running Cmdora from a source checkout
+    against a disposable demo workspace, the checkout's ``.env`` is a deliberate fallback so the
+    user does not need to copy an API key into every demo directory.  Installed packages retain
+    the workspace-only behaviour because they have no checked-out ``pyproject.toml``.
+    """
+    workspace_dotenv = workspace_path / ".env"
+    if workspace_dotenv.is_file():
+        return workspace_dotenv
+
+    checkout_root = Path(__file__).resolve().parents[3]
+    checkout_dotenv = checkout_root / ".env"
+    if (checkout_root / "pyproject.toml").is_file() and checkout_dotenv.is_file():
+        return checkout_dotenv
+    return workspace_dotenv
+
+
 def _safe_planning_context(workspace_path: Path) -> SafeContext:
     """Collect only the allowlisted, redacted metadata needed for a plan."""
     operations = DeterministicOperations(workspace_path)
@@ -175,7 +194,7 @@ def _handle_planned_request(
     app_config = ApplicationConfigStore().load()
     active_planner = planner or GeminiPlanner(
         model=app_config.model,
-        dotenv_path=workspace / ".env",
+        dotenv_path=_planner_dotenv_path(workspace),
     )
     context = _safe_planning_context(workspace)
     plan = active_planner.create_plan(request, context)
