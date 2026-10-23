@@ -63,7 +63,7 @@ def test_config_init_project_creates_workspace_scoped_configuration(
     assert result.exit_code == 0
     config_path = tmp_path / ".Cmdora" / "config.toml"
     assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
-        "autonomy_mode": "git",
+        "autonomy_mode": "off",
         "allowed_write_directories": ["src", "tests"],
         "protected_branches": ["main", "master"],
     }
@@ -189,7 +189,7 @@ def test_natural_language_request_accepts_execution_flags(
     from cmdora.config import RepositoryConfigStore
 
     monkeypatch.chdir(tmp_path)
-    RepositoryConfigStore(tmp_path).initialize()
+    RepositoryConfigStore(tmp_path).set_autonomy_mode("git")
     result = runner.invoke(
         app,
         [
@@ -215,7 +215,7 @@ def test_autonomy_consent_is_scoped_to_the_current_repository(
     untrusted_repository.mkdir()
     from cmdora.config import RepositoryConfigStore
 
-    RepositoryConfigStore(trusted_repository).initialize()
+    RepositoryConfigStore(trusted_repository).set_autonomy_mode("git")
 
     monkeypatch.chdir(trusted_repository)
     trusted_result = runner.invoke(
@@ -227,6 +227,7 @@ def test_autonomy_consent_is_scoped_to_the_current_repository(
     )
 
     assert trusted_result.exit_code == 0
+    assert "Autonomy: git mode enabled for repository trusted" in trusted_result.output
     assert untrusted_result.exit_code == 1
     assert "not enabled for this repository" in untrusted_result.output
 
@@ -340,6 +341,39 @@ def test_approval_can_enable_repository_scoped_git_autonomy(
     assert (tmp_path / "consented.js").is_file()
     config = tomllib.loads((tmp_path / ".Cmdora" / "config.toml").read_text(encoding="utf-8"))
     assert config["autonomy_mode"] == "git"
+
+
+def test_git_autonomy_runs_allowlisted_create_without_an_interactive_prompt(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    from cmdora.config import RepositoryConfigStore
+    from cmdora.storage import AuditLog
+
+    monkeypatch.chdir(tmp_path)
+    RepositoryConfigStore(tmp_path).set_autonomy_mode("git")
+    prompt = mocker.patch("cmdora.cli.main.prompt_for_approval")
+
+    result = runner.invoke(
+        app,
+        ["make a file named automated.js", "--autonomy", "git"],
+    )
+
+    assert result.exit_code == 0
+    assert "Autonomy: git mode enabled for repository" in result.output
+    assert (tmp_path / "automated.js").is_file()
+    prompt.assert_not_called()
+    assert AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()[0][
+        "approval_status"
+    ] == "autonomous"
+
+
+def test_invalid_autonomy_mode_is_rejected(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list files modified today", "--autonomy", "all"])
+
+    assert result.exit_code == 1
+    assert "must be either 'off' or 'git'" in result.output
 
 
 def test_cli_blocks_an_unstaged_commit_before_calling_git(

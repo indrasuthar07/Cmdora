@@ -28,5 +28,10 @@ def test_repository_configuration_persists_only_in_its_own_workspace(tmp_path: P
 
     assert RepositoryConfigStore(first_workspace).initialize()
 
+    assert RepositoryConfigStore(first_workspace).load().autonomy_mode == "off"
+    assert RepositoryConfigStore(second_workspace).load().autonomy_mode == "off"
+
+    RepositoryConfigStore(first_workspace).set_autonomy_mode("git")
+
     assert RepositoryConfigStore(first_workspace).load().autonomy_mode == "git"
     assert RepositoryConfigStore(second_workspace).load().autonomy_mode == "off"

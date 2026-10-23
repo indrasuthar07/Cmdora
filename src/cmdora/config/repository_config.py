@@ -85,7 +85,7 @@ class RepositoryConfigStore:
     def initialize(self) -> bool:
         """Create a project config once with the documented starter permissions."""
         config = RepositoryConfig(
-            autonomy_mode="git",
+            autonomy_mode="off",
             allowed_write_directories=["src", "tests"],
             protected_branches=["main", "master"],
         )

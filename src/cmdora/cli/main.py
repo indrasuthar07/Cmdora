@@ -88,8 +88,11 @@ def _request_approval(
     options: RequestOptions,
     request_id: str,
     workspace_path: Path,
+    autonomous: bool = False,
 ) -> ApprovalChoice:
     """Get explicit consent before a non-read-only action reaches an executor."""
+    if autonomous:
+        return ApprovalChoice.RUN_ONCE
     if options.json_output:
         _record_audit(
             command=None,
@@ -131,8 +134,10 @@ def _request_approval(
     return choice
 
 
-def _approval_status(choice: ApprovalChoice) -> str:
+def _approval_status(choice: ApprovalChoice, *, autonomous: bool = False) -> str:
     """Return the audit label corresponding to an interactive consent choice."""
+    if autonomous:
+        return "autonomous"
     return "autonomy_enabled" if choice == ApprovalChoice.ENABLE_AUTONOMY else "approved_once"
 
 
@@ -475,13 +480,19 @@ def _dry_run_message(
 def _handle_deterministic_request(request: str, options: RequestOptions, request_id: str) -> bool:
     """Run a supported deterministic request; return false when no route matches."""
     workspace_path = Path.cwd().resolve()
-    if options.autonomy is not None and options.autonomy != "off":
-        repository_config = RepositoryConfigStore(workspace_path).load()
+    if options.autonomy not in {None, "off", "git"}:
+        raise ValueError("--autonomy must be either 'off' or 'git'.")
+    repository_config = RepositoryConfigStore(workspace_path).load()
+    autonomy_enabled = options.autonomy == "git"
+    if autonomy_enabled:
         if repository_config.autonomy_mode != options.autonomy:
             raise PermissionError(
                 f"Autonomy mode '{options.autonomy}' is not enabled for this repository. "
-                "Run 'Cmdora config init --project' here and set its autonomy_mode explicitly."
+                "Approve an action with 'a' or explicitly set autonomy_mode = 'git' in "
+                ".Cmdora/config.toml."
             )
+        if not options.json_output:
+            typer.echo(f"Autonomy: git mode enabled for repository {workspace_path.name}")
     operations = DeterministicOperations(workspace_path)
 
     file_path = _create_file_path(request)
@@ -495,7 +506,6 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 user_request=request,
             )
             return True
-        repository_config = RepositoryConfigStore(workspace_path).load()
         target = validate_repository_write_path(workspace_path, file_path, repository_config)
         relative_path = _display_path(workspace_path, target)
         command = f"New-Item -ItemType File -Path {_powershell_literal(relative_path)}"
@@ -523,6 +533,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             options=options,
             request_id=request_id,
             workspace_path=workspace_path,
+            autonomous=autonomy_enabled,
         )
         if approval == ApprovalChoice.CANCEL:
             return True
@@ -543,7 +554,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             duration_seconds=monotonic() - started_at,
             stdout=f"Created file: {_display_path(workspace_path, created_path)}",
             final_status="succeeded",
-            approval_status=_approval_status(approval),
+            approval_status=_approval_status(approval, autonomous=autonomy_enabled),
             request_id=request_id,
             user_request=request,
             workspace_identifier=workspace_path,
@@ -645,6 +656,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             options=options,
             request_id=request_id,
             workspace_path=workspace_path,
+            autonomous=autonomy_enabled,
         )
         if approval == ApprovalChoice.CANCEL:
             return True
@@ -664,7 +676,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             options.json_output,
             request_id=request_id,
             user_request=request,
-            approval_status=_approval_status(approval),
+            approval_status=_approval_status(approval, autonomous=autonomy_enabled),
         )
         return True
 
@@ -684,7 +696,6 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             )
         else:
             origin_url = GitSafetyValidator(workspace_path).inspect().origin_url
-            repository_config = RepositoryConfigStore(workspace_path).load()
             policy = assess_command(
                 "git push origin HEAD",
                 workspace_path,
@@ -711,6 +722,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 options=options,
                 request_id=request_id,
                 workspace_path=workspace_path,
+                autonomous=autonomy_enabled,
             )
             if approval == ApprovalChoice.CANCEL:
                 return True
@@ -729,7 +741,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 options.json_output,
                 request_id=request_id,
                 user_request=request,
-                approval_status=_approval_status(approval),
+                approval_status=_approval_status(approval, autonomous=autonomy_enabled),
             )
         return True
 
