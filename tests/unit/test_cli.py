@@ -261,9 +261,13 @@ def test_create_file_request_creates_the_requested_file(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(app, ["make a file named test.js"])
+    result = runner.invoke(app, ["make a file named test.js"], input="y\n")
 
     assert result.exit_code == 0
+    assert "Request:" in result.output
+    assert "Plan:" in result.output
+    assert "Risk:\nCaution" in result.output
+    assert "Proceed? [y/N]" in result.output
     assert (tmp_path / "test.js").is_file()
 
 
@@ -278,7 +282,7 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     monkeypatch.chdir(tmp_path)
 
     status = runner.invoke(app, ["git status"])
-    commit = runner.invoke(app, ["commit my latest changes with message add feature"])
+    commit = runner.invoke(app, ["commit my latest changes with message add feature"], input="y\n")
 
     assert status.exit_code == 0
     assert "feature.txt" in status.output
@@ -301,11 +305,41 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
         "git commit -m add feature",
     ]
     assert all(record["policy_decision"] == "allowed" for record in records)
-    assert all(record["approval_status"] == "not_required" for record in records)
+    assert [record["approval_status"] for record in records] == ["not_required", "approved_once"]
     assert all(record["user_request"] for record in records)
     assert all(record["workspace_identifier"] == str(tmp_path) for record in records)
     assert all(record["llm_plan"] is None for record in records)
     assert records[0]["request_id"] != records[1]["request_id"]
+
+
+def test_create_file_approval_cancel_and_dry_run_do_not_create_a_file(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    cancelled = runner.invoke(app, ["make a file named cancelled.js"], input="n\n")
+    dry_run = runner.invoke(app, ["make a file named preview.js"], input="d\n")
+
+    assert cancelled.exit_code == 0
+    assert "Cancelled — no command executed." in cancelled.output
+    assert not (tmp_path / "cancelled.js").exists()
+    assert dry_run.exit_code == 0
+    assert "Dry run only — no command executed." in dry_run.output
+    assert not (tmp_path / "preview.js").exists()
+
+
+def test_approval_can_enable_repository_scoped_git_autonomy(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["make a file named consented.js"], input="a\n")
+
+    assert result.exit_code == 0
+    assert "Git autonomy enabled for this repository only" in result.output
+    assert (tmp_path / "consented.js").is_file()
+    config = tomllib.loads((tmp_path / ".Cmdora" / "config.toml").read_text(encoding="utf-8"))
+    assert config["autonomy_mode"] == "git"
 
 
 def test_cli_blocks_an_unstaged_commit_before_calling_git(

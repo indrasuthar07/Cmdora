@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import tomllib
 from pathlib import Path, PureWindowsPath
 from typing import Literal
@@ -101,6 +102,35 @@ class RepositoryConfigStore:
                 f"Could not initialize repository configuration at {self.config_path}: {error}"
             ) from error
         return True
+
+    def set_autonomy_mode(self, mode: Literal["off", "git"]) -> RepositoryConfig:
+        """Persist a deliberately narrow autonomy setting for this workspace only."""
+        config = self.load().model_copy(update={"autonomy_mode": mode})
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="\n",
+                dir=self.config_path.parent,
+                prefix=".config.toml.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                temporary_file.write(_serialize_repository_config(config))
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            temporary_path.replace(self.config_path)
+        except OSError as error:
+            raise ConfigError(
+                f"Could not save repository configuration at {self.config_path}: {error}"
+            ) from error
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+        return config
 
 
 def validate_repository_write_path(

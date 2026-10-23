@@ -13,6 +13,7 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from cmdora import __version__
+from cmdora.cli.approval import ApprovalChoice, ApprovalRequest, prompt_for_approval
 from cmdora.config import (
     ApplicationConfigStore,
     ConfigError,
@@ -77,6 +78,62 @@ console = Console()
 
 def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, default=str))
+
+
+def _request_approval(
+    *,
+    request: str,
+    plan_steps: tuple[str, ...],
+    decision: PolicyDecision,
+    options: RequestOptions,
+    request_id: str,
+    workspace_path: Path,
+) -> ApprovalChoice:
+    """Get explicit consent before a non-read-only action reaches an executor."""
+    if options.json_output:
+        _record_audit(
+            command=None,
+            exit_code=None,
+            duration_seconds=0,
+            final_status="approval_required",
+            policy_decision=decision.model_dump_json(),
+            approval_status="pending",
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
+        )
+        _emit_json(
+            {
+                "status": "approval_required",
+                "policy": decision.model_dump(mode="json"),
+                "plan": list(plan_steps),
+            }
+        )
+        return ApprovalChoice.CANCEL
+
+    choice = prompt_for_approval(ApprovalRequest(request, plan_steps, decision))
+    if choice == ApprovalChoice.ENABLE_AUTONOMY:
+        RepositoryConfigStore(workspace_path).set_autonomy_mode("git")
+        typer.echo("Git autonomy enabled for this repository only. Running this action once.")
+    if choice == ApprovalChoice.CANCEL:
+        _record_audit(
+            command=None,
+            exit_code=None,
+            duration_seconds=0,
+            final_status="cancelled",
+            policy_decision=decision.model_dump_json(),
+            approval_status="cancelled",
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
+        )
+        typer.echo("Cancelled — no command executed.")
+    return choice
+
+
+def _approval_status(choice: ApprovalChoice) -> str:
+    """Return the audit label corresponding to an interactive consent choice."""
+    return "autonomy_enabled" if choice == ApprovalChoice.ENABLE_AUTONOMY else "approved_once"
 
 
 def _planner_dotenv_path(workspace_path: Path) -> Path:
@@ -247,7 +304,13 @@ def _record_audit(
     )
 
 
-def _record_command_result(result: CommandResult, *, request_id: str, user_request: str) -> None:
+def _record_command_result(
+    result: CommandResult,
+    *,
+    request_id: str,
+    user_request: str,
+    approval_status: str = "not_required",
+) -> None:
     status = (
         "timed_out"
         if result.timed_out
@@ -264,6 +327,7 @@ def _record_command_result(result: CommandResult, *, request_id: str, user_reque
         stdout=result.stdout,
         stderr=result.stderr,
         final_status=status,
+        approval_status=approval_status,
         request_id=request_id,
         user_request=user_request,
         workspace_identifier=result.workspace_path,
@@ -352,9 +416,15 @@ def _emit_command_result(
     request_id: str,
     user_request: str,
     record_audit: bool = True,
+    approval_status: str = "not_required",
 ) -> None:
     if record_audit:
-        _record_command_result(result, request_id=request_id, user_request=user_request)
+        _record_command_result(
+            result,
+            request_id=request_id,
+            user_request=user_request,
+            approval_status=approval_status,
+        )
     if json_output:
         _emit_json({"status": "success" if result.succeeded else "failed", **asdict(result)})
         return
@@ -425,6 +495,46 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 user_request=request,
             )
             return True
+        repository_config = RepositoryConfigStore(workspace_path).load()
+        target = validate_repository_write_path(workspace_path, file_path, repository_config)
+        relative_path = _display_path(workspace_path, target)
+        command = f"New-Item -ItemType File -Path {_powershell_literal(relative_path)}"
+        policy = assess_command(
+            command,
+            workspace_path,
+            repository_config=repository_config,
+        )
+        if not policy.allowed:
+            _emit_blocked_policy(
+                decision=policy.decision,
+                options=options,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
+            )
+            raise typer.Exit(code=1)
+        approval = _request_approval(
+            request=request,
+            plan_steps=(
+                f"Check whether {_display_path(workspace_path, target)} already exists.",
+                "Create the file only if it does not exist.",
+            ),
+            decision=policy.decision,
+            options=options,
+            request_id=request_id,
+            workspace_path=workspace_path,
+        )
+        if approval == ApprovalChoice.CANCEL:
+            return True
+        if approval == ApprovalChoice.DRY_RUN:
+            _dry_run_create_file(
+                file_path,
+                workspace_path,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+            )
+            return True
         started_at = monotonic()
         created_path = operations.create_file(file_path)
         _record_audit(
@@ -433,6 +543,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             duration_seconds=monotonic() - started_at,
             stdout=f"Created file: {_display_path(workspace_path, created_path)}",
             final_status="succeeded",
+            approval_status=_approval_status(approval),
             request_id=request_id,
             user_request=request,
             workspace_identifier=workspace_path,
@@ -524,12 +635,36 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 workspace_path=workspace_path,
             )
             raise typer.Exit(code=1)
+        approval = _request_approval(
+            request=request,
+            plan_steps=(
+                "Check that the selected Git repository has staged changes.",
+                "Create a commit using the supplied message.",
+            ),
+            decision=policy.decision,
+            options=options,
+            request_id=request_id,
+            workspace_path=workspace_path,
+        )
+        if approval == ApprovalChoice.CANCEL:
+            return True
+        if approval == ApprovalChoice.DRY_RUN:
+            _dry_run_message(
+                f"git commit -m {_powershell_literal(message)}",
+                "Commits the files already staged in the current workspace.",
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
+            )
+            return True
         commit_result = operations.git_commit(message)
         _emit_command_result(
             commit_result,
             options.json_output,
             request_id=request_id,
             user_request=request,
+            approval_status=_approval_status(approval),
         )
         return True
 
@@ -566,11 +701,35 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                     workspace_path=workspace_path,
                 )
                 raise typer.Exit(code=1)
+            approval = _request_approval(
+                request=request,
+                plan_steps=(
+                    "Verify the current non-protected branch and origin remote.",
+                    "Push the current branch to origin.",
+                ),
+                decision=policy.decision,
+                options=options,
+                request_id=request_id,
+                workspace_path=workspace_path,
+            )
+            if approval == ApprovalChoice.CANCEL:
+                return True
+            if approval == ApprovalChoice.DRY_RUN:
+                _dry_run_message(
+                    "git push origin HEAD",
+                    "Pushes the current branch to the origin remote.",
+                    options.json_output,
+                    request_id=request_id,
+                    user_request=request,
+                    workspace_path=workspace_path,
+                )
+                return True
             _emit_command_result(
                 operations.git_push(),
                 options.json_output,
                 request_id=request_id,
                 user_request=request,
+                approval_status=_approval_status(approval),
             )
         return True
 
