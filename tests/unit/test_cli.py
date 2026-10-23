@@ -334,13 +334,65 @@ def test_approval_can_enable_repository_scoped_git_autonomy(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(app, ["make a file named consented.js"], input="a\n")
+    result = runner.invoke(app, ["make a file named consented.js"], input="a\ny\n")
 
     assert result.exit_code == 0
+    assert "You are enabling Git automation for this repository." in result.output
+    assert "constrained git push" in result.output
+    assert "Continue? [y/N]" in result.output
     assert "Git autonomy enabled for this repository only" in result.output
     assert (tmp_path / "consented.js").is_file()
     config = tomllib.loads((tmp_path / ".Cmdora" / "config.toml").read_text(encoding="utf-8"))
     assert config["autonomy_mode"] == "git"
+
+
+def test_declining_session_autonomy_confirmation_cancels_without_saving_consent(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["make a file named declined.js"], input="a\nn\n")
+
+    assert result.exit_code == 0
+    assert "Cancelled — no command executed." in result.output
+    assert not (tmp_path / "declined.js").exists()
+    assert not (tmp_path / ".Cmdora" / "config.toml").exists()
+
+
+def test_ctrl_c_during_approval_records_cancellation(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    from cmdora.storage import AuditLog
+
+    monkeypatch.chdir(tmp_path)
+    mocker.patch("cmdora.cli.main.prompt_for_approval", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["make a file named interrupted.js"])
+
+    assert result.exit_code == 130
+    assert "Cancelled — no subsequent action was executed." in result.output
+    assert not (tmp_path / "interrupted.js").exists()
+    record = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()[0]
+    assert record["final_status"] == "cancelled"
+    assert record["approval_status"] == "cancelled"
+
+
+def test_ctrl_c_during_autonomy_session_confirmation_does_not_save_consent(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    from cmdora.storage import AuditLog
+
+    monkeypatch.chdir(tmp_path)
+    mocker.patch("cmdora.cli.main.confirm_git_autonomy", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["make a file named session-interrupted.js"], input="a\n")
+
+    assert result.exit_code == 130
+    assert not (tmp_path / "session-interrupted.js").exists()
+    assert not (tmp_path / ".Cmdora" / "config.toml").exists()
+    assert AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()[0][
+        "final_status"
+    ] == "cancelled"
 
 
 def test_git_autonomy_runs_allowlisted_create_without_an_interactive_prompt(

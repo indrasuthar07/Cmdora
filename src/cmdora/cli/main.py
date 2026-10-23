@@ -13,7 +13,12 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from cmdora import __version__
-from cmdora.cli.approval import ApprovalChoice, ApprovalRequest, prompt_for_approval
+from cmdora.cli.approval import (
+    ApprovalChoice,
+    ApprovalRequest,
+    confirm_git_autonomy,
+    prompt_for_approval,
+)
 from cmdora.config import (
     ApplicationConfigStore,
     ConfigError,
@@ -116,8 +121,11 @@ def _request_approval(
 
     choice = prompt_for_approval(ApprovalRequest(request, plan_steps, decision))
     if choice == ApprovalChoice.ENABLE_AUTONOMY:
-        RepositoryConfigStore(workspace_path).set_autonomy_mode("git")
-        typer.echo("Git autonomy enabled for this repository only. Running this action once.")
+        if not confirm_git_autonomy():
+            choice = ApprovalChoice.CANCEL
+        else:
+            RepositoryConfigStore(workspace_path).set_autonomy_mode("git")
+            typer.echo("Git autonomy enabled for this repository only. Running this action once.")
     if choice == ApprovalChoice.CANCEL:
         _record_audit(
             command=None,
@@ -823,6 +831,23 @@ def main(
             request_started_at = monotonic()
             try:
                 handled = _handle_deterministic_request(request, options, request_id)
+            except (KeyboardInterrupt, typer.Abort):
+                try:
+                    _record_audit(
+                        command=None,
+                        exit_code=None,
+                        duration_seconds=monotonic() - request_started_at,
+                        final_status="cancelled",
+                        policy_decision="not_evaluated",
+                        approval_status="cancelled",
+                        request_id=request_id,
+                        user_request=request,
+                        workspace_identifier=workspace_path,
+                    )
+                except AuditLogError:
+                    pass
+                typer.echo("Cancelled — no subsequent action was executed.", err=True)
+                raise typer.Exit(code=130) from None
             except AuditLogError as error:
                 typer.echo(f"Audit error: {error}", err=True)
                 raise typer.Exit(code=1) from error
@@ -848,6 +873,23 @@ def main(
             if not handled:
                 try:
                     _handle_planned_request(request, options, request_id)
+                except (KeyboardInterrupt, typer.Abort):
+                    try:
+                        _record_audit(
+                            command=None,
+                            exit_code=None,
+                            duration_seconds=monotonic() - request_started_at,
+                            final_status="cancelled",
+                            policy_decision="not_evaluated",
+                            approval_status="cancelled",
+                            request_id=request_id,
+                            user_request=request,
+                            workspace_identifier=workspace_path,
+                        )
+                    except AuditLogError:
+                        pass
+                    typer.echo("Cancelled — no subsequent action was executed.", err=True)
+                    raise typer.Exit(code=130) from None
                 except AuditLogError as error:
                     typer.echo(f"Audit error: {error}", err=True)
                     raise typer.Exit(code=1) from error

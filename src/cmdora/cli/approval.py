@@ -49,4 +49,22 @@ def prompt_for_approval(approval: ApprovalRequest) -> ApprovalChoice:
         typer.echo("Please choose y, n, d, or a.", err=True)
 
 
-__all__ = ["ApprovalChoice", "ApprovalRequest", "prompt_for_approval"]
+def confirm_git_autonomy() -> bool:
+    """Explain the narrow Git automation boundary before persisting consent."""
+    typer.echo("You are enabling Git automation for this repository.\n")
+    typer.echo("Cmdora may automatically run:")
+    typer.echo("- git status")
+    typer.echo("- git add")
+    typer.echo("- git commit")
+    typer.echo("- constrained git push\n")
+    typer.echo("It will not run destructive Git commands, force pushes,")
+    typer.echo("system commands, package installs, or file deletion.\n")
+    return typer.confirm("Continue?", default=False)
+
+
+__all__ = [
+    "ApprovalChoice",
+    "ApprovalRequest",
+    "confirm_git_autonomy",
+    "prompt_for_approval",
+]
