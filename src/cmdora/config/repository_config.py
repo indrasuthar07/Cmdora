@@ -23,6 +23,7 @@ class RepositoryConfig(BaseModel):
     autonomy_mode: Literal["off", "git"] = "off"
     allowed_write_directories: list[str] = Field(default_factory=lambda: ["."])
     protected_branches: list[str] = Field(default_factory=lambda: ["main", "master"])
+    ignored_directories: list[str] = Field(default_factory=list)
 
     @field_validator("allowed_write_directories")
     @classmethod
@@ -50,6 +51,27 @@ class RepositoryConfig(BaseModel):
             if not value:
                 raise ValueError("protected branch names must not be empty")
             if value not in normalized:
+                normalized.append(value)
+        return normalized
+
+    @field_validator("ignored_directories")
+    @classmethod
+    def validate_ignored_directories(cls, directories: list[str]) -> list[str]:
+        """Accept only directory names, never paths that can escape the workspace."""
+        normalized: list[str] = []
+        for directory in directories:
+            value = directory.strip()
+            windows_path = PureWindowsPath(value)
+            if (
+                not value
+                or value in {".", ".."}
+                or "/" in value
+                or "\\" in value
+                or windows_path.is_absolute()
+                or windows_path.drive
+            ):
+                raise ValueError("ignored directories must be non-empty directory names")
+            if value.casefold() not in {item.casefold() for item in normalized}:
                 normalized.append(value)
         return normalized
 
@@ -88,6 +110,7 @@ class RepositoryConfigStore:
             autonomy_mode="off",
             allowed_write_directories=["src", "tests"],
             protected_branches=["main", "master"],
+            ignored_directories=[],
         )
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -165,11 +188,15 @@ def _serialize_repository_config(config: RepositoryConfig) -> str:
     branches = ", ".join(
         json.dumps(value, ensure_ascii=False) for value in config.protected_branches
     )
+    ignored_directories = ", ".join(
+        json.dumps(value, ensure_ascii=False) for value in config.ignored_directories
+    )
     return "\n".join(
         (
             f"autonomy_mode = {json.dumps(config.autonomy_mode)}",
             f"allowed_write_directories = [{directories}]",
             f"protected_branches = [{branches}]",
+            f"ignored_directories = [{ignored_directories}]",
             "",
         )
     )

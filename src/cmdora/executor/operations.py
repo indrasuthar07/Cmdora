@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from time import monotonic
 
@@ -73,6 +73,7 @@ class DeterministicOperations:
         *,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         max_output_characters: int = DEFAULT_MAX_OUTPUT_CHARACTERS,
+        ignored_directories: Collection[str] = (),
     ) -> None:
         self.workspace_path = resolve_workspace(workspace_path)
         if timeout_seconds <= 0:
@@ -82,6 +83,12 @@ class DeterministicOperations:
 
         self.timeout_seconds = timeout_seconds
         self.max_output_characters = max_output_characters
+        self.ignored_directories = frozenset(
+            {
+                *self._IGNORED_DIRECTORIES,
+                *(directory.casefold() for directory in ignored_directories),
+            }
+        )
 
     def create_file(self, path: Path | str) -> Path:
         """Create an empty file within the workspace without overwriting anything."""
@@ -99,7 +106,8 @@ class DeterministicOperations:
     def list_modified_today(self) -> list[ModifiedFile]:
         """List workspace files modified since local midnight, newest first."""
         now = datetime.now().astimezone()
-        today = now.date()
+        start_of_today = datetime.combine(now.date(), time.min, tzinfo=now.tzinfo)
+        start_of_tomorrow = start_of_today + timedelta(days=1)
         modified_files: list[ModifiedFile] = []
 
         for current_directory, directory_names, file_names in os.walk(
@@ -109,7 +117,8 @@ class DeterministicOperations:
             directory_names[:] = [
                 name
                 for name in directory_names
-                if name not in self._IGNORED_DIRECTORIES and not (current_path / name).is_symlink()
+                if name.casefold() not in self.ignored_directories
+                and not (current_path / name).is_symlink()
             ]
 
             for name in file_names:
@@ -124,7 +133,7 @@ class DeterministicOperations:
                     continue
 
                 modified_at = datetime.fromtimestamp(stat.st_mtime).astimezone()
-                if modified_at.date() == today:
+                if start_of_today <= modified_at < start_of_tomorrow:
                     modified_files.append(
                         ModifiedFile(
                             path=candidate.relative_to(self.workspace_path),

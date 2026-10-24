@@ -210,7 +210,11 @@ def _planner_dotenv_path(workspace_path: Path) -> Path:
 
 def _safe_planning_context(workspace_path: Path) -> SafeContext:
     """Collect only the allowlisted, redacted metadata needed for a plan."""
-    operations = DeterministicOperations(workspace_path)
+    repository_config = RepositoryConfigStore(workspace_path).load()
+    operations = DeterministicOperations(
+        workspace_path,
+        ignored_directories=repository_config.ignored_directories,
+    )
     status_result = operations.git_status()
     is_git_repository = status_result.succeeded
     status = status_result.stdout if is_git_repository else ""
@@ -224,7 +228,6 @@ def _safe_planning_context(workspace_path: Path) -> SafeContext:
             if branch == "HEAD (no branch)":
                 branch = None
 
-    repository_config = RepositoryConfigStore(workspace_path).load()
     return SafeContext(
         workspace_basename=workspace_path.name or "workspace",
         is_git_repository=is_git_repository,
@@ -391,12 +394,21 @@ def _create_file_path(request: str) -> str | None:
     """Return the target path for the supported deterministic create-file phrasing."""
     patterns = (
         r"^(?:make|create)\s+(?:a\s+)?(?:new\s+)?file\s+(?:named|called)\s+(.+?)\s*[.!]?$",
-        r"^create\s+(.+\.[A-Za-z0-9]+)\s*$",
     )
     for pattern in patterns:
         match = re.fullmatch(pattern, request.strip(), re.IGNORECASE)
         if match:
             return match.group(1).strip().strip("\"'")
+
+    path_match = re.fullmatch(r"create\s+(.+?)\s*", request.strip(), re.IGNORECASE)
+    if path_match:
+        candidate = path_match.group(1).strip().strip("\"'")
+        # A direct create request is deterministic only when it visibly names a path. The
+        # downstream resolver performs canonicalization and rejects traversal/outside paths.
+        if "/" in candidate or "\\" in candidate or re.search(
+            r"\.[A-Za-z0-9]+$", candidate
+        ):
+            return candidate
     return None
 
 
@@ -541,7 +553,47 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             )
         if not options.json_output:
             typer.echo(f"Autonomy: git mode enabled for repository {workspace_path.name}")
-    operations = DeterministicOperations(workspace_path)
+    operations = DeterministicOperations(
+        workspace_path,
+        ignored_directories=repository_config.ignored_directories,
+    )
+
+    if re.fullmatch(
+        r"what\s+command\s+(?:shows?|will\s+show)\s+(?:my\s+)?current\s+git\s+branch\??",
+        request.strip(),
+        re.IGNORECASE,
+    ):
+        command = "git branch --show-current"
+        explanation = (
+            "Prints the name of the branch currently checked out in this repository. "
+            "It prints no branch name when HEAD is detached."
+        )
+        _record_audit(
+            command=None,
+            exit_code=None,
+            duration_seconds=0,
+            stdout=f"Command: {command}\nExplanation: {explanation}",
+            final_status="explained",
+            policy_decision="explain_only",
+            approval_status="not_required",
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
+        )
+        if options.json_output:
+            _emit_json(
+                {
+                    "status": "explained",
+                    "command": command,
+                    "explanation": explanation,
+                    "executed": False,
+                }
+            )
+        else:
+            typer.echo(f"Command:\n{command}\n")
+            typer.echo(f"Explanation:\n{explanation}\n")
+            typer.echo("Not executed — ask Cmdora to run it if you want to execute it.")
+        return True
 
     file_path = _create_file_path(request)
     if file_path is not None:
@@ -575,6 +627,7 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             request=request,
             plan_steps=(
                 f"Check whether {_display_path(workspace_path, target)} already exists.",
+                "Create missing parent directories only inside allowed workspace directories.",
                 "Create the file only if it does not exist.",
             ),
             decision=policy.decision,
@@ -608,7 +661,12 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             workspace_identifier=workspace_path,
         )
         if options.json_output:
-            _emit_json({"status": "success", "created_file": str(created_path)})
+            _emit_json(
+                {
+                    "status": "success",
+                    "created_file": _display_path(workspace_path, created_path),
+                }
+            )
         else:
             typer.echo(f"Created file: {_display_path(workspace_path, created_path)}")
         return True

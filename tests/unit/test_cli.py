@@ -66,8 +66,70 @@ def test_config_init_project_creates_workspace_scoped_configuration(
         "autonomy_mode": "off",
         "allowed_write_directories": ["src", "tests"],
         "protected_branches": ["main", "master"],
+        "ignored_directories": [],
     }
     assert "Created project configuration" in result.output
+
+
+def test_file_discovery_shows_relative_metadata_and_honors_configured_ignores(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from cmdora.config import RepositoryConfigStore
+
+    visible_file = tmp_path / "src" / "visible.txt"
+    ignored_file = tmp_path / "generated" / "ignored.txt"
+    visible_file.parent.mkdir()
+    ignored_file.parent.mkdir()
+    visible_file.write_text("visible", encoding="utf-8")
+    ignored_file.write_text("ignored", encoding="utf-8")
+    config_path = tmp_path / ".Cmdora"
+    config_path.mkdir()
+    (config_path / "config.toml").write_text(
+        'autonomy_mode = "off"\n'
+        'allowed_write_directories = ["src", "tests"]\n'
+        'protected_branches = ["main", "master"]\n'
+        'ignored_directories = ["generated"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list all files modified today"])
+
+    assert result.exit_code == 0
+    assert "src\\visible.txt" in result.output
+    assert "bytes" in result.output
+    assert "generated\\ignored.txt" not in result.output
+    history = RepositoryConfigStore(tmp_path)
+    assert history.load().ignored_directories == ["generated"]
+
+
+def test_file_discovery_handles_no_matches(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list all files modified today"])
+
+    assert result.exit_code == 0
+    assert "No files modified today." in result.output
+
+
+def test_explain_only_branch_command_never_executes_or_uses_planner(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    planned_request = mocker.patch("cmdora.cli.main._handle_planned_request")
+
+    result = runner.invoke(app, ["what command shows my current git branch?"])
+
+    assert result.exit_code == 0
+    assert "git branch --show-current" in result.output
+    assert "Not executed" in result.output
+    planned_request.assert_not_called()
+
+    from cmdora.storage import AuditLog
+
+    record = AuditLog().recent()[-1]
+    assert record["final_status"] == "explained"
+    assert record["executed_command"] is None
 
 
 def test_history_command_shows_empty_state() -> None:
