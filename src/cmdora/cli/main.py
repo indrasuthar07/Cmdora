@@ -820,12 +820,15 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                 workspace_path=workspace_path,
             )
         else:
-            origin_url = GitSafetyValidator(workspace_path).inspect().origin_url
+            git_state = GitSafetyValidator(workspace_path).inspect()
+            branch = git_state.branch
+            origin_url = git_state.origin_url
             policy = assess_command(
                 "git push origin HEAD",
                 workspace_path,
                 explicit_push_request=True,
                 expected_origin_url=origin_url,
+                current_branch=branch,
                 protected_branches=repository_config.protected_branches,
             )
             if not policy.allowed:
@@ -837,10 +840,19 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
                     workspace_path=workspace_path,
                 )
                 raise typer.Exit(code=1)
+            if not options.json_output:
+                typer.echo(f"Current branch: {branch}")
+                typer.echo("Remote: origin (configured)")
+                typer.echo("Protected branch check: passed")
+                typer.echo(
+                    "Push command: git push origin HEAD "
+                    "(force, tags, and deletion are unavailable)"
+                )
             approval = _request_approval(
                 request=request,
                 plan_steps=(
-                    "Verify the current non-protected branch and origin remote.",
+                    f"Verify branch '{branch}' is not protected and origin is configured.",
+                    "Recheck the branch and origin immediately before pushing.",
                     "Push the current branch to origin.",
                 ),
                 decision=policy.decision,
