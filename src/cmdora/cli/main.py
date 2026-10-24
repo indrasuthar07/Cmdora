@@ -149,6 +149,46 @@ def _approval_status(choice: ApprovalChoice, *, autonomous: bool = False) -> str
     return "autonomy_enabled" if choice == ApprovalChoice.ENABLE_AUTONOMY else "approved_once"
 
 
+def _changed_workspace_files(status_output: str) -> list[str]:
+    """Extract stageable paths from ``git status --short`` without accepting risky entries."""
+    changed_files: list[str] = []
+    for line in status_output.splitlines():
+        if len(line) < 4:
+            raise ValueError("Git returned an unreadable status entry.")
+        status, path = line[:2], line[3:]
+        if not path or path.startswith('"'):
+            raise ValueError("Quoted Git paths require manual staging.")
+        if any(marker in status for marker in "DRCU"):
+            raise ValueError(
+                "Rename, copy, deletion, and conflicted changes require manual Git review."
+            )
+        if status != "??" and not any(marker in status for marker in "AMT "):
+            raise ValueError("Git returned an unsupported change status.")
+        changed_files.append(path)
+    if not changed_files:
+        raise ValueError("There are no changes to commit.")
+    return changed_files
+
+
+def _git_add_command(paths: list[str]) -> str:
+    """Render a display-only explicit Git add command for approval and policy evaluation."""
+    quoted_paths = " ".join(_powershell_literal(path) for path in paths)
+    return f"git add -- {quoted_paths}"
+
+
+def _commit_workflow_decision(
+    add_command: str, message: str, policy: PolicyDecision
+) -> PolicyDecision:
+    """Describe the approved stage-and-commit workflow as one cautious action."""
+    return PolicyDecision(
+        allowed=True,
+        risk_level="caution",
+        requires_confirmation=True,
+        reasons=[*policy.reasons, "Creates a commit using the user-provided message."],
+        sanitized_command=f"{add_command}\ngit commit -m {_powershell_literal(message)}",
+    )
+
+
 def _planner_dotenv_path(workspace_path: Path) -> Path:
     """Find a local API-key file without searching outside known Cmdora locations.
 
@@ -632,35 +672,53 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             raise ValueError("Please provide a non-empty commit message.")
         if options.dry_run:
             _dry_run_message(
+                "git status --short\n"
+                "git add -- <changed workspace files>\n"
                 f"git commit -m {_powershell_literal(message)}",
-                "Commits the files already staged in the current workspace.",
+                "Shows changed files, stages explicit safe workspace files, then commits them.",
                 options.json_output,
                 request_id=request_id,
                 user_request=request,
                 workspace_path=workspace_path,
             )
             return True
-        policy = assess_command(
-            f"git commit -m {_powershell_literal(message)}",
-            workspace_path,
-            autonomy_mode=options.autonomy or "off",
-        )
-        if not policy.allowed:
+
+        status_result = operations.git_status_short()
+        _record_command_result(status_result, request_id=request_id, user_request=request)
+        if not status_result.succeeded:
+            _emit_command_result(
+                status_result,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                record_audit=False,
+            )
+        changed_files = _changed_workspace_files(status_result.stdout)
+        if not options.json_output:
+            typer.echo("Changed files:")
+            for changed_file in changed_files:
+                typer.echo(f"- {changed_file}")
+
+        add_command = _git_add_command(changed_files)
+        add_policy = assess_command(add_command, workspace_path)
+        if not add_policy.allowed:
             _emit_blocked_policy(
-                decision=policy.decision,
+                decision=add_policy.decision,
                 options=options,
                 request_id=request_id,
                 user_request=request,
                 workspace_path=workspace_path,
             )
             raise typer.Exit(code=1)
+        workflow_decision = _commit_workflow_decision(add_command, message, add_policy.decision)
         approval = _request_approval(
             request=request,
             plan_steps=(
-                "Check that the selected Git repository has staged changes.",
+                "Inspect the current Git changes and validate each workspace path.",
+                "Stage only the displayed safe workspace files.",
                 "Create a commit using the supplied message.",
             ),
-            decision=policy.decision,
+            decision=workflow_decision,
             options=options,
             request_id=request_id,
             workspace_path=workspace_path,
@@ -670,22 +728,81 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             return True
         if approval == ApprovalChoice.DRY_RUN:
             _dry_run_message(
-                f"git commit -m {_powershell_literal(message)}",
-                "Commits the files already staged in the current workspace.",
+                f"{add_command}\ngit commit -m {_powershell_literal(message)}",
+                "Stages the displayed safe workspace files, then commits them.",
                 options.json_output,
                 request_id=request_id,
                 user_request=request,
                 workspace_path=workspace_path,
             )
             return True
-        commit_result = operations.git_commit(message)
-        _emit_command_result(
-            commit_result,
-            options.json_output,
+        approval_status = _approval_status(approval, autonomous=autonomy_enabled)
+        add_result = operations.git_add(changed_files)
+        _record_command_result(
+            add_result,
             request_id=request_id,
             user_request=request,
-            approval_status=_approval_status(approval, autonomous=autonomy_enabled),
+            approval_status=approval_status,
         )
+        if not add_result.succeeded:
+            _emit_command_result(
+                add_result,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                record_audit=False,
+                approval_status=approval_status,
+            )
+        commit_policy = assess_command(
+            f"git commit -m {_powershell_literal(message)}",
+            workspace_path,
+            autonomy_mode=options.autonomy or "off",
+        )
+        if not commit_policy.allowed:
+            _emit_blocked_policy(
+                decision=commit_policy.decision,
+                options=options,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
+            )
+            raise typer.Exit(code=1)
+        commit_result = operations.git_commit(message)
+        _record_command_result(
+            commit_result,
+            request_id=request_id,
+            user_request=request,
+            approval_status=approval_status,
+        )
+        if not commit_result.succeeded:
+            _emit_command_result(
+                commit_result,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                record_audit=False,
+                approval_status=approval_status,
+            )
+        commit_hash = operations.git_head_short()
+        _record_command_result(
+            commit_hash,
+            request_id=request_id,
+            user_request=request,
+            approval_status=approval_status,
+        )
+        if not commit_hash.succeeded:
+            _emit_command_result(
+                commit_hash,
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                record_audit=False,
+                approval_status=approval_status,
+            )
+        if options.json_output:
+            _emit_json({"status": "success", "commit_hash": commit_hash.stdout.strip()})
+        else:
+            typer.echo(f"Commit hash: {commit_hash.stdout.strip()}")
         return True
 
     if re.fullmatch(

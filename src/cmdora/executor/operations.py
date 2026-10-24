@@ -139,6 +139,10 @@ class DeterministicOperations:
         """Return the current branch and concise working-tree status."""
         return self._run_git(("status", "--short", "--branch"))
 
+    def git_status_short(self) -> CommandResult:
+        """Return only porcelain-style changed-file entries for a workflow preflight."""
+        return self._run_git(("status", "--short"))
+
     def git_add(self, files: Sequence[Path | str]) -> CommandResult:
         """Stage only the explicitly named workspace paths."""
         if not files:
@@ -164,6 +168,10 @@ class DeterministicOperations:
         if not message.strip():
             raise ValueError("Commit message cannot be empty")
         return self._run_git(("commit", "-m", message))
+
+    def git_head_short(self) -> CommandResult:
+        """Return the newly created commit's abbreviated object ID."""
+        return self._run_git(("rev-parse", "--short", "HEAD"))
 
     def git_push(self) -> CommandResult:
         """Push the current branch to the origin remote."""

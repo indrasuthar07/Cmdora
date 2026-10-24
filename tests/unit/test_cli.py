@@ -275,12 +275,15 @@ def test_create_file_request_creates_the_requested_file(
 def test_cli_git_status_and_commit_requests_in_temporary_repository(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "cmdora@example.test"], cwd=tmp_path, check=True)
-    (tmp_path / "feature.txt").write_text("feature\n", encoding="utf-8")
-    subprocess.run(["git", "add", "feature.txt"], cwd=tmp_path, check=True)
-    monkeypatch.chdir(tmp_path)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "cmdora@example.test"], cwd=repository, check=True
+    )
+    (repository / "feature.txt").write_text("feature\n", encoding="utf-8")
+    monkeypatch.chdir(repository)
 
     status = runner.invoke(app, ["git status"])
     commit = runner.invoke(app, ["commit my latest changes with message add feature"], input="y\n")
@@ -288,10 +291,12 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     assert status.exit_code == 0
     assert "feature.txt" in status.output
     assert commit.exit_code == 0
+    assert "Changed files:\n- feature.txt" in commit.output
+    assert "Commit hash:" in commit.output
     assert "add feature" in commit.output
     log = subprocess.run(
         ["git", "log", "-1", "--format=%s"],
-        cwd=tmp_path,
+        cwd=repository,
         check=True,
         capture_output=True,
         text=True,
@@ -303,14 +308,24 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()
     assert [record["executed_command"] for record in records] == [
         "git status --short --branch",
+        "git status --short",
+        "git add -- :(literal)feature.txt",
         "git commit -m add feature",
+        "git rev-parse --short HEAD",
     ]
     assert all(record["policy_decision"] == "allowed" for record in records)
-    assert [record["approval_status"] for record in records] == ["not_required", "approved_once"]
+    assert [record["approval_status"] for record in records] == [
+        "not_required",
+        "not_required",
+        "approved_once",
+        "approved_once",
+        "approved_once",
+    ]
     assert all(record["user_request"] for record in records)
-    assert all(record["workspace_identifier"] == str(tmp_path) for record in records)
+    assert all(record["workspace_identifier"] == str(repository) for record in records)
     assert all(record["llm_plan"] is None for record in records)
     assert records[0]["request_id"] != records[1]["request_id"]
+    assert len({record["request_id"] for record in records[1:]}) == 1
 
 
 def test_create_file_approval_cancel_and_dry_run_do_not_create_a_file(
@@ -428,19 +443,23 @@ def test_invalid_autonomy_mode_is_rejected(monkeypatch: MonkeyPatch, tmp_path: P
     assert "must be either 'off' or 'git'" in result.output
 
 
-def test_cli_blocks_an_unstaged_commit_before_calling_git(
+def test_git_commit_workflow_stops_before_staging_or_committing_deleted_files(
     monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
 ) -> None:
     subprocess.run(["git", "init", "-b", "feature/safety"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "cmdora@example.test"], cwd=tmp_path, check=True)
-    (tmp_path / "unstaged.txt").write_text("not staged\n", encoding="utf-8")
+    (tmp_path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True)
+    (tmp_path / "tracked.txt").unlink()
     monkeypatch.chdir(tmp_path)
+    stage = mocker.patch("cmdora.executor.operations.DeterministicOperations.git_add")
     commit = mocker.patch("cmdora.executor.operations.DeterministicOperations.git_commit")
 
     result = runner.invoke(app, ["commit my changes with message should not run"])
 
     assert result.exit_code == 1
-    assert "Blocked:" in result.output
-    assert "No files are staged" in result.output
+    assert "deletion" in result.output
+    stage.assert_not_called()
     commit.assert_not_called()
