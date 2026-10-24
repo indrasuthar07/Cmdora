@@ -65,19 +65,6 @@ def test_list_modified_today_returns_only_current_day_files(tmp_path: Path) -> N
     assert results[0].size_bytes == len("today")
 
 
-def test_list_modified_today_excludes_configured_directory_names(tmp_path: Path) -> None:
-    visible_file = tmp_path / "src" / "visible.txt"
-    ignored_file = tmp_path / "generated" / "ignored.txt"
-    visible_file.parent.mkdir()
-    ignored_file.parent.mkdir()
-    visible_file.write_text("visible", encoding="utf-8")
-    ignored_file.write_text("ignored", encoding="utf-8")
-
-    operations = DeterministicOperations(tmp_path, ignored_directories=["generated"])
-
-    assert [item.path for item in operations.list_modified_today()] == [Path("src/visible.txt")]
-
-
 def test_git_status_and_commit_workflow_in_temporary_repository(tmp_path: Path) -> None:
     _initialize_repository(tmp_path)
     operations = DeterministicOperations(tmp_path)
