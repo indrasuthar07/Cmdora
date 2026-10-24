@@ -63,11 +63,73 @@ def test_config_init_project_creates_workspace_scoped_configuration(
     assert result.exit_code == 0
     config_path = tmp_path / ".Cmdora" / "config.toml"
     assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
-        "autonomy_mode": "git",
+        "autonomy_mode": "off",
         "allowed_write_directories": ["src", "tests"],
         "protected_branches": ["main", "master"],
+        "ignored_directories": [],
     }
     assert "Created project configuration" in result.output
+
+
+def test_file_discovery_shows_relative_metadata_and_honors_configured_ignores(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from cmdora.config import RepositoryConfigStore
+
+    visible_file = tmp_path / "src" / "visible.txt"
+    ignored_file = tmp_path / "generated" / "ignored.txt"
+    visible_file.parent.mkdir()
+    ignored_file.parent.mkdir()
+    visible_file.write_text("visible", encoding="utf-8")
+    ignored_file.write_text("ignored", encoding="utf-8")
+    config_path = tmp_path / ".Cmdora"
+    config_path.mkdir()
+    (config_path / "config.toml").write_text(
+        'autonomy_mode = "off"\n'
+        'allowed_write_directories = ["src", "tests"]\n'
+        'protected_branches = ["main", "master"]\n'
+        'ignored_directories = ["generated"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list all files modified today"])
+
+    assert result.exit_code == 0
+    assert "src\\visible.txt" in result.output
+    assert "bytes" in result.output
+    assert "generated\\ignored.txt" not in result.output
+    history = RepositoryConfigStore(tmp_path)
+    assert history.load().ignored_directories == ["generated"]
+
+
+def test_file_discovery_handles_no_matches(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list all files modified today"])
+
+    assert result.exit_code == 0
+    assert "No files modified today." in result.output
+
+
+def test_explain_only_branch_command_never_executes_or_uses_planner(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    planned_request = mocker.patch("cmdora.cli.main._handle_planned_request")
+
+    result = runner.invoke(app, ["what command shows my current git branch?"])
+
+    assert result.exit_code == 0
+    assert "git branch --show-current" in result.output
+    assert "Not executed" in result.output
+    planned_request.assert_not_called()
+
+    from cmdora.storage import AuditLog
+
+    record = AuditLog().recent()[-1]
+    assert record["final_status"] == "explained"
+    assert record["executed_command"] is None
 
 
 def test_history_command_shows_empty_state() -> None:
@@ -189,7 +251,7 @@ def test_natural_language_request_accepts_execution_flags(
     from cmdora.config import RepositoryConfigStore
 
     monkeypatch.chdir(tmp_path)
-    RepositoryConfigStore(tmp_path).initialize()
+    RepositoryConfigStore(tmp_path).set_autonomy_mode("git")
     result = runner.invoke(
         app,
         [
@@ -215,7 +277,7 @@ def test_autonomy_consent_is_scoped_to_the_current_repository(
     untrusted_repository.mkdir()
     from cmdora.config import RepositoryConfigStore
 
-    RepositoryConfigStore(trusted_repository).initialize()
+    RepositoryConfigStore(trusted_repository).set_autonomy_mode("git")
 
     monkeypatch.chdir(trusted_repository)
     trusted_result = runner.invoke(
@@ -227,6 +289,7 @@ def test_autonomy_consent_is_scoped_to_the_current_repository(
     )
 
     assert trusted_result.exit_code == 0
+    assert "Autonomy: git mode enabled for repository trusted" in trusted_result.output
     assert untrusted_result.exit_code == 1
     assert "not enabled for this repository" in untrusted_result.output
 
@@ -261,32 +324,41 @@ def test_create_file_request_creates_the_requested_file(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(app, ["make a file named test.js"])
+    result = runner.invoke(app, ["make a file named test.js"], input="y\n")
 
     assert result.exit_code == 0
+    assert "Request:" in result.output
+    assert "Plan:" in result.output
+    assert "Risk:\nCaution" in result.output
+    assert "Proceed? [y/N]" in result.output
     assert (tmp_path / "test.js").is_file()
 
 
 def test_cli_git_status_and_commit_requests_in_temporary_repository(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "cmdora@example.test"], cwd=tmp_path, check=True)
-    (tmp_path / "feature.txt").write_text("feature\n", encoding="utf-8")
-    subprocess.run(["git", "add", "feature.txt"], cwd=tmp_path, check=True)
-    monkeypatch.chdir(tmp_path)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "cmdora@example.test"], cwd=repository, check=True
+    )
+    (repository / "feature.txt").write_text("feature\n", encoding="utf-8")
+    monkeypatch.chdir(repository)
 
     status = runner.invoke(app, ["git status"])
-    commit = runner.invoke(app, ["commit my latest changes with message add feature"])
+    commit = runner.invoke(app, ["commit my latest changes with message add feature"], input="y\n")
 
     assert status.exit_code == 0
     assert "feature.txt" in status.output
     assert commit.exit_code == 0
+    assert "Changed files:\n- feature.txt" in commit.output
+    assert "Commit hash:" in commit.output
     assert "add feature" in commit.output
     log = subprocess.run(
         ["git", "log", "-1", "--format=%s"],
-        cwd=tmp_path,
+        cwd=repository,
         check=True,
         capture_output=True,
         text=True,
@@ -298,29 +370,158 @@ def test_cli_git_status_and_commit_requests_in_temporary_repository(
     records = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()
     assert [record["executed_command"] for record in records] == [
         "git status --short --branch",
+        "git status --short",
+        "git add -- :(literal)feature.txt",
         "git commit -m add feature",
+        "git rev-parse --short HEAD",
     ]
     assert all(record["policy_decision"] == "allowed" for record in records)
-    assert all(record["approval_status"] == "not_required" for record in records)
+    assert [record["approval_status"] for record in records] == [
+        "not_required",
+        "not_required",
+        "approved_once",
+        "approved_once",
+        "approved_once",
+    ]
     assert all(record["user_request"] for record in records)
-    assert all(record["workspace_identifier"] == str(tmp_path) for record in records)
+    assert all(record["workspace_identifier"] == str(repository) for record in records)
     assert all(record["llm_plan"] is None for record in records)
     assert records[0]["request_id"] != records[1]["request_id"]
+    assert len({record["request_id"] for record in records[1:]}) == 1
 
 
-def test_cli_blocks_an_unstaged_commit_before_calling_git(
+def test_create_file_approval_cancel_and_dry_run_do_not_create_a_file(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    cancelled = runner.invoke(app, ["make a file named cancelled.js"], input="n\n")
+    dry_run = runner.invoke(app, ["make a file named preview.js"], input="d\n")
+
+    assert cancelled.exit_code == 0
+    assert "Cancelled — no command executed." in cancelled.output
+    assert not (tmp_path / "cancelled.js").exists()
+    assert dry_run.exit_code == 0
+    assert "Dry run only — no command executed." in dry_run.output
+    assert not (tmp_path / "preview.js").exists()
+
+
+def test_approval_can_enable_repository_scoped_git_autonomy(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["make a file named consented.js"], input="a\ny\n")
+
+    assert result.exit_code == 0
+    assert "You are enabling Git automation for this repository." in result.output
+    assert "constrained git push" in result.output
+    assert "Continue? [y/N]" in result.output
+    assert "Git autonomy enabled for this repository only" in result.output
+    assert (tmp_path / "consented.js").is_file()
+    config = tomllib.loads((tmp_path / ".Cmdora" / "config.toml").read_text(encoding="utf-8"))
+    assert config["autonomy_mode"] == "git"
+
+
+def test_declining_session_autonomy_confirmation_cancels_without_saving_consent(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["make a file named declined.js"], input="a\nn\n")
+
+    assert result.exit_code == 0
+    assert "Cancelled — no command executed." in result.output
+    assert not (tmp_path / "declined.js").exists()
+    assert not (tmp_path / ".Cmdora" / "config.toml").exists()
+
+
+def test_ctrl_c_during_approval_records_cancellation(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    from cmdora.storage import AuditLog
+
+    monkeypatch.chdir(tmp_path)
+    mocker.patch("cmdora.cli.main.prompt_for_approval", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["make a file named interrupted.js"])
+
+    assert result.exit_code == 130
+    assert "Cancelled — no subsequent action was executed." in result.output
+    assert not (tmp_path / "interrupted.js").exists()
+    record = AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()[0]
+    assert record["final_status"] == "cancelled"
+    assert record["approval_status"] == "cancelled"
+
+
+def test_ctrl_c_during_autonomy_session_confirmation_does_not_save_consent(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    from cmdora.storage import AuditLog
+
+    monkeypatch.chdir(tmp_path)
+    mocker.patch("cmdora.cli.main.confirm_git_autonomy", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["make a file named session-interrupted.js"], input="a\n")
+
+    assert result.exit_code == 130
+    assert not (tmp_path / "session-interrupted.js").exists()
+    assert not (tmp_path / ".Cmdora" / "config.toml").exists()
+    assert AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()[0][
+        "final_status"
+    ] == "cancelled"
+
+
+def test_git_autonomy_runs_allowlisted_create_without_an_interactive_prompt(
+    monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    from cmdora.config import RepositoryConfigStore
+    from cmdora.storage import AuditLog
+
+    monkeypatch.chdir(tmp_path)
+    RepositoryConfigStore(tmp_path).set_autonomy_mode("git")
+    prompt = mocker.patch("cmdora.cli.main.prompt_for_approval")
+
+    result = runner.invoke(
+        app,
+        ["make a file named automated.js", "--autonomy", "git"],
+    )
+
+    assert result.exit_code == 0
+    assert "Autonomy: git mode enabled for repository" in result.output
+    assert (tmp_path / "automated.js").is_file()
+    prompt.assert_not_called()
+    assert AuditLog(tmp_path / "app-data" / "CmdoraAI" / "history.db").recent()[0][
+        "approval_status"
+    ] == "autonomous"
+
+
+def test_invalid_autonomy_mode_is_rejected(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list files modified today", "--autonomy", "all"])
+
+    assert result.exit_code == 1
+    assert "must be either 'off' or 'git'" in result.output
+
+
+def test_git_commit_workflow_stops_before_staging_or_committing_deleted_files(
     monkeypatch: MonkeyPatch, mocker: MockerFixture, tmp_path: Path
 ) -> None:
     subprocess.run(["git", "init", "-b", "feature/safety"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Cmdora Test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "cmdora@example.test"], cwd=tmp_path, check=True)
-    (tmp_path / "unstaged.txt").write_text("not staged\n", encoding="utf-8")
+    (tmp_path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True)
+    (tmp_path / "tracked.txt").unlink()
     monkeypatch.chdir(tmp_path)
+    stage = mocker.patch("cmdora.executor.operations.DeterministicOperations.git_add")
     commit = mocker.patch("cmdora.executor.operations.DeterministicOperations.git_commit")
 
     result = runner.invoke(app, ["commit my changes with message should not run"])
 
     assert result.exit_code == 1
-    assert "Blocked:" in result.output
-    assert "No files are staged" in result.output
+    assert "deletion" in result.output
+    stage.assert_not_called()
     commit.assert_not_called()
