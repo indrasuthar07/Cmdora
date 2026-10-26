@@ -23,6 +23,7 @@ from cmdora.config import (
     ApplicationConfigStore,
     ConfigError,
     RepositoryConfigStore,
+    default_user_env_path,
     validate_repository_write_path,
 )
 from cmdora.context import SafeContext
@@ -192,14 +193,19 @@ def _commit_workflow_decision(
 def _planner_dotenv_path(workspace_path: Path) -> Path:
     """Find a local API-key file without searching outside known Cmdora locations.
 
-    A selected workspace owns its own configuration.  When running Cmdora from a source checkout
-    against a disposable demo workspace, the checkout's ``.env`` is a deliberate fallback so the
-    user does not need to copy an API key into every demo directory.  Installed packages retain
-    the workspace-only behaviour because they have no checked-out ``pyproject.toml``.
+    Priority order:
+    1. Workspace-level `.env` file (if present).
+    2. Global user-level `.env` file at `%APPDATA%/CmdoraAI/.env`
+       (configured via `cmdora config set-key`).
+    3. Source checkout `.env` file (fallback during local development only).
     """
     workspace_dotenv = workspace_path / ".env"
     if workspace_dotenv.is_file():
         return workspace_dotenv
+
+    user_dotenv = default_user_env_path()
+    if user_dotenv.is_file():
+        return user_dotenv
 
     checkout_root = Path(__file__).resolve().parents[3]
     checkout_dotenv = checkout_root / ".env"
@@ -1138,6 +1144,35 @@ def config_init(
         console.print(f"Created {scope} configuration: {store.config_path}")
     else:
         console.print(f"Configuration already exists; left unchanged: {store.config_path}")
+
+
+@config_app.command("set-key")
+def config_set_key(
+    key: Annotated[
+        str | None,
+        typer.Argument(
+            help="Your Gemini API key. If omitted, you will be prompted securely.",
+        ),
+    ] = None,
+) -> None:
+    """Save your Gemini API key globally so Cmdora can plan commands anywhere."""
+    api_key = key
+    if not api_key:
+        api_key = typer.prompt("Enter your Gemini API key", hide_input=True)
+    api_key = api_key.strip()
+    if not api_key:
+        typer.echo("Error: API key cannot be empty.", err=True)
+        raise typer.Exit(code=1)
+
+    target_env = default_user_env_path()
+    try:
+        target_env.parent.mkdir(parents=True, exist_ok=True)
+        target_env.write_text(f"GEMINI_API_KEY={api_key}\n", encoding="utf-8")
+        console.print(f"[green]API key saved successfully to {target_env}[/green]")
+        console.print("You can now run natural-language commands with Cmdora from any directory.")
+    except OSError as error:
+        typer.echo(f"Error saving API key: {error}", err=True)
+        raise typer.Exit(code=1) from error
 
 
 def _display_history_records(records: list[dict[str, Any]]) -> None:
