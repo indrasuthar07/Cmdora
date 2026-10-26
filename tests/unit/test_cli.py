@@ -46,7 +46,7 @@ def test_config_init_creates_default_user_configuration(
     assert config_path.is_file()
     assert "Created user configuration" in result.output
     assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
-        "model": "gemini-3.8-flash",
+        "model": "gemini-3.1-flash-lite",
         "default_timeout_seconds": 30,
         "max_output_characters": 8000,
         "default_autonomy_mode": "off",
@@ -525,3 +525,33 @@ def test_git_commit_workflow_stops_before_staging_or_committing_deleted_files(
     assert "deletion" in result.output
     stage.assert_not_called()
     commit.assert_not_called()
+
+
+def test_config_set_key_saves_api_key_to_user_env(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    env_dir = tmp_path / "app-data" / "CmdoraAI"
+    monkeypatch.setenv("APPDATA", str(tmp_path / "app-data"))
+
+    result = runner.invoke(app, ["config", "set-key", "test-api-key-12345"])
+
+    assert result.exit_code == 0
+    assert "API key saved successfully" in result.output
+    saved_file = env_dir / ".env"
+    assert saved_file.is_file()
+    assert saved_file.read_text(encoding="utf-8") == "GEMINI_API_KEY=test-api-key-12345\n"
+
+
+def test_config_set_key_prompts_when_argument_omitted(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    env_dir = tmp_path / "app-data" / "CmdoraAI"
+    monkeypatch.setenv("APPDATA", str(tmp_path / "app-data"))
+
+    result = runner.invoke(app, ["config", "set-key"], input="prompted-secret-key\n")
+
+    assert result.exit_code == 0
+    assert "API key saved successfully" in result.output
+    saved_file = env_dir / ".env"
+    assert saved_file.is_file()
+    assert saved_file.read_text(encoding="utf-8") == "GEMINI_API_KEY=prompted-secret-key\n"

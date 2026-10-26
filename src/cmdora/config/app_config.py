@@ -17,7 +17,7 @@ class ApplicationConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model: str = "gemini-3.8-flash"
+    model: str = "gemini-3.1-flash-lite"
     default_timeout_seconds: int = Field(default=30, gt=0)
     max_output_characters: int = Field(default=8_000, gt=0)
     default_autonomy_mode: Literal["off", "git"] = "off"
@@ -57,6 +57,11 @@ def default_config_path() -> Path:
         xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
         base_directory = Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"
     return base_directory / "CmdoraAI" / "config.toml"
+
+
+def default_user_env_path() -> Path:
+    """Return the persistent user-level .env path: %APPDATA%/CmdoraAI/.env."""
+    return default_config_path().parent / ".env"
 
 
 class ApplicationConfigStore:
