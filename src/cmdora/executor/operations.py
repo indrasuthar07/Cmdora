@@ -144,6 +144,38 @@ class DeterministicOperations:
 
         return sorted(modified_files, key=lambda item: item.modified_at, reverse=True)
 
+    def find_files(self, extension_or_pattern: str = "*") -> list[Path]:
+        """List workspace files matching a pattern or extension, respecting ignored directories."""
+        pattern = extension_or_pattern.strip()
+        if not pattern.startswith("*"):
+            if pattern.startswith("."):
+                pattern = f"*{pattern}"
+            else:
+                pattern = f"*.{pattern}"
+
+        matches: list[Path] = []
+        for current_directory, directory_names, file_names in os.walk(
+            self.workspace_path, topdown=True, followlinks=False
+        ):
+            current_path = Path(current_directory)
+            directory_names[:] = [
+                name
+                for name in directory_names
+                if name.casefold() not in self.ignored_directories
+                and not (current_path / name).is_symlink()
+            ]
+
+            for name in file_names:
+                candidate = current_path / name
+                if candidate.is_symlink():
+                    continue
+                relative = candidate.relative_to(self.workspace_path)
+                ext = pattern.removeprefix("*").casefold()
+                if candidate.match(pattern) or name.casefold().endswith(ext):
+                    matches.append(relative)
+
+        return sorted(matches)
+
     def git_status(self) -> CommandResult:
         """Return the current branch and concise working-tree status."""
         return self._run_git(("status", "--short", "--branch"))

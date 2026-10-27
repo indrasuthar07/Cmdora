@@ -103,3 +103,23 @@ def test_git_commit_requires_a_message(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Commit message cannot be empty"):
         operations.git_commit("  ")
+
+
+def test_find_files_matches_extension_and_respects_ignored_directories(tmp_path: Path) -> None:
+    operations = DeterministicOperations(tmp_path)
+    (tmp_path / "app.py").write_text("print(1)\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "helper.py").write_text("print(2)\n", encoding="utf-8")
+    (tmp_path / "sub" / "style.css").write_text("body {}\n", encoding="utf-8")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "ignored.py").write_text("ignored\n", encoding="utf-8")
+
+    py_files = operations.find_files("*.py")
+    assert Path("app.py") in py_files
+    assert Path("sub/helper.py") in py_files
+    assert Path("sub/style.css") not in py_files
+    assert Path(".venv/ignored.py") not in py_files
+
+    css_files = operations.find_files("css")
+    assert Path("sub/style.css") in css_files
+    assert len(css_files) == 1

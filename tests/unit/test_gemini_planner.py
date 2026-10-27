@@ -146,11 +146,20 @@ def test_cli_dotenv_path_uses_workspace_dotenv_when_present(tmp_path: Path) -> N
 
 
 def test_cli_dotenv_path_falls_back_to_checkout_dotenv_for_demo_workspace(tmp_path: Path) -> None:
-    path = _planner_dotenv_path(tmp_path)
-
-    assert path.name == ".env"
-    assert path.is_file()
-    assert (path.parent / "pyproject.toml").is_file()
+    checkout_root = Path(__file__).resolve().parents[2]
+    test_env = checkout_root / ".env"
+    created = False
+    if not test_env.exists():
+        test_env.write_text("GEMINI_API_KEY=test-fallback\n", encoding="utf-8")
+        created = True
+    try:
+        path = _planner_dotenv_path(tmp_path)
+        assert path.name == ".env"
+        assert path.is_file()
+        assert (path.parent / "pyproject.toml").is_file()
+    finally:
+        if created:
+            test_env.unlink(missing_ok=True)
 
 
 def test_bad_request_error_identifies_request_or_schema_rejection(

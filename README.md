@@ -60,15 +60,19 @@ uv run Cmdora --help
 
 ## Gemini API key setup
 
-Copy the example file and add your own key:
+Anyone using Cmdora can configure their API key once with a single command:
 
 ```powershell
-Copy-Item .env.example .env
-notepad .env
+cmdora config set-key
 ```
 
-Set `GEMINI_API_KEY` in `.env`. The file is ignored by Git. You can also set the key only for the
-current terminal session:
+You will be prompted securely for your key, which is saved to `%APPDATA%\CmdoraAI\.env` so Cmdora works from any folder or repository. You can also pass it directly:
+
+```powershell
+cmdora config set-key "your-gemini-api-key"
+```
+
+Alternatively, set `GEMINI_API_KEY` in a local `.env` file or export it for your terminal session:
 
 ```powershell
 $env:GEMINI_API_KEY = "your-key-here"

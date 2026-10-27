@@ -23,10 +23,11 @@ from cmdora.config import (
     ApplicationConfigStore,
     ConfigError,
     RepositoryConfigStore,
+    default_user_env_path,
     validate_repository_write_path,
 )
 from cmdora.context import SafeContext
-from cmdora.executor import CommandResult, DeterministicOperations
+from cmdora.executor import CommandResult, DeterministicOperations, PowerShellExecutor
 from cmdora.llm import PlannerProvider
 from cmdora.llm.gemini import GeminiPlanner, PlannerError
 from cmdora.safety import (
@@ -35,6 +36,7 @@ from cmdora.safety import (
     assess_command,
     format_policy_decision,
 )
+from cmdora.safety.block_rules import blocked_command_reason
 from cmdora.schemas import ActionPlan
 from cmdora.storage import AuditLog, AuditLogError, AuditRecord
 
@@ -192,10 +194,11 @@ def _commit_workflow_decision(
 def _planner_dotenv_path(workspace_path: Path) -> Path:
     """Find a local API-key file without searching outside known Cmdora locations.
 
-    A selected workspace owns its own configuration.  When running Cmdora from a source checkout
-    against a disposable demo workspace, the checkout's ``.env`` is a deliberate fallback so the
-    user does not need to copy an API key into every demo directory.  Installed packages retain
-    the workspace-only behaviour because they have no checked-out ``pyproject.toml``.
+    Priority order:
+    1. Workspace-level `.env` file (if present).
+    2. Global user-level `.env` file at `%APPDATA%/CmdoraAI/.env`
+       (configured via `cmdora config set-key`).
+    3. Source checkout `.env` file (fallback during local development only).
     """
     workspace_dotenv = workspace_path / ".env"
     if workspace_dotenv.is_file():
@@ -205,6 +208,11 @@ def _planner_dotenv_path(workspace_path: Path) -> Path:
     checkout_dotenv = checkout_root / ".env"
     if (checkout_root / "pyproject.toml").is_file() and checkout_dotenv.is_file():
         return checkout_dotenv
+
+    user_dotenv = default_user_env_path()
+    if user_dotenv.is_file():
+        return user_dotenv
+
     return workspace_dotenv
 
 
@@ -310,7 +318,14 @@ def _handle_planned_request(
         dotenv_path=_planner_dotenv_path(workspace),
     )
     context = _safe_planning_context(workspace)
-    plan = active_planner.create_plan(request, context)
+    if options.json_output:
+        plan = active_planner.create_plan(request, context)
+    else:
+        with console.status(
+            f"[bold cyan]Planning with {app_config.model}...[/bold cyan]",
+            spinner="dots",
+        ):
+            plan = active_planner.create_plan(request, context)
     _record_audit(
         command=None,
         exit_code=None,
@@ -323,8 +338,141 @@ def _handle_planned_request(
         workspace_identifier=workspace,
         llm_plan=plan.model_dump_json(),
     )
-    _display_action_plan(plan, json_output=options.json_output)
+    if plan.needs_clarification or options.dry_run or not plan.steps:
+        _display_action_plan(plan, json_output=options.json_output)
+        return plan
+
+    _execute_plan_steps(
+        plan=plan,
+        request=request,
+        options=options,
+        request_id=request_id,
+        workspace_path=workspace,
+    )
     return plan
+
+
+def _execute_plan_steps(
+    *,
+    plan: ActionPlan,
+    request: str,
+    options: RequestOptions,
+    request_id: str,
+    workspace_path: Path,
+) -> None:
+    repository_config = RepositoryConfigStore(workspace_path).load()
+    autonomy_enabled = options.autonomy == "git" and repository_config.autonomy_mode == "git"
+
+    for step in plan.steps:
+        if not step.command:
+            continue
+
+        # 1. Deny rules check
+        blocked_reason = blocked_command_reason(step.command)
+        if blocked_reason is not None:
+            decision = PolicyDecision(
+                allowed=False,
+                risk_level="blocked",
+                requires_confirmation=False,
+                reasons=[blocked_reason],
+                sanitized_command=step.command,
+            )
+            _emit_blocked_policy(
+                decision=decision,
+                options=options,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
+            )
+            if options.json_output:
+                return
+            raise typer.Exit(code=1)
+
+        # 2. Local policy assessment
+        assessment = assess_command(
+            step.command,
+            workspace_path,
+            repository_config=repository_config,
+            autonomy_mode=options.autonomy or repository_config.autonomy_mode,
+        )
+
+        approval_status = "not_required"
+        if assessment.allowed and assessment.decision.requires_confirmation:
+            approval = _request_approval(
+                request=request,
+                plan_steps=(f"Execute: {step.command}", f"Effect: {step.expected_effect}"),
+                decision=assessment.decision,
+                options=options,
+                request_id=request_id,
+                workspace_path=workspace_path,
+                autonomous=autonomy_enabled,
+            )
+            if approval in {ApprovalChoice.CANCEL, ApprovalChoice.DRY_RUN}:
+                return
+            approval_status = _approval_status(approval, autonomous=autonomy_enabled)
+        elif not assessment.allowed:
+            decision = PolicyDecision(
+                allowed=True,
+                risk_level="caution",
+                requires_confirmation=True,
+                reasons=[f"Proposed step: {step.purpose}. {assessment.reason}"],
+                sanitized_command=step.command,
+            )
+            approval = _request_approval(
+                request=request,
+                plan_steps=(f"Execute: {step.command}", f"Effect: {step.expected_effect}"),
+                decision=decision,
+                options=options,
+                request_id=request_id,
+                workspace_path=workspace_path,
+                autonomous=False,
+            )
+            if approval in {ApprovalChoice.CANCEL, ApprovalChoice.DRY_RUN}:
+                return
+            approval_status = _approval_status(approval, autonomous=False)
+
+        # 3. Execution via bounded PowerShellExecutor
+        executor = PowerShellExecutor(workspace_path)
+        result = executor.execute(step.command)
+
+        # 4. Audit
+        _record_audit(
+            command=step.command,
+            exit_code=result.exit_code,
+            duration_seconds=result.elapsed_seconds,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            final_status="succeeded" if result.succeeded else "failed",
+            approval_status=approval_status,
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
+        )
+
+        # 5. Output
+        if options.json_output:
+            _emit_json({
+                "status": "success" if result.succeeded else "failed",
+                "step_id": step.id,
+                "command": step.command,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.exit_code,
+            })
+        else:
+            if result.stdout.strip():
+                typer.echo(result.stdout.strip())
+            if result.stderr.strip():
+                typer.echo(result.stderr.strip(), err=True)
+            if result.timed_out:
+                typer.echo("Command timed out.", err=True)
+            elif result.cancelled:
+                typer.echo("Command cancelled.", err=True)
+            elif not result.succeeded and not result.stderr.strip():
+                typer.echo(f"Command failed with exit code {result.exit_code}.", err=True)
+
+        if not result.succeeded:
+            raise typer.Exit(code=1)
 
 
 def _record_audit(
@@ -409,6 +557,57 @@ def _create_file_path(request: str) -> str | None:
             r"\.[A-Za-z0-9]+$", candidate
         ):
             return candidate
+    return None
+
+
+def _match_file_listing_request(request: str) -> tuple[str, str] | None:
+    """Match requests like 'list all python files', 'show all .js files', etc."""
+    req = request.strip()
+    match = re.fullmatch(
+        r"(?:(?:list|show(?:\s+me)?|find|get)\s+)?(?:all\s+)?(?:the\s+)?(\w+|\*\.\w+|\.\w+)\s+files(?:\s+in\s+(?:the\s+)?(?:project|workspace|repository|repo))?[.!]?",
+        req,
+        re.I,
+    )
+    if not match:
+        return None
+    raw = match.group(1).lower()
+    if raw in {"modified", "changed", "staged", "tracked", "untracked"}:
+        return None
+
+    mapping = {
+        "python": ("*.py", "Python"),
+        "py": ("*.py", "Python"),
+        ".py": ("*.py", "Python"),
+        "*.py": ("*.py", "Python"),
+        "javascript": ("*.js", "JavaScript"),
+        "js": ("*.js", "JavaScript"),
+        ".js": ("*.js", "JavaScript"),
+        "typescript": ("*.ts", "TypeScript"),
+        "ts": ("*.ts", "TypeScript"),
+        ".ts": ("*.ts", "TypeScript"),
+        "json": ("*.json", "JSON"),
+        ".json": ("*.json", "JSON"),
+        "markdown": ("*.md", "Markdown"),
+        "md": ("*.md", "Markdown"),
+        ".md": ("*.md", "Markdown"),
+        "html": ("*.html", "HTML"),
+        ".html": ("*.html", "HTML"),
+        "css": ("*.css", "CSS"),
+        ".css": ("*.css", "CSS"),
+        "text": ("*.txt", "text"),
+        "txt": ("*.txt", "text"),
+        ".txt": ("*.txt", "text"),
+        "rust": ("*.rs", "Rust"),
+        "rs": ("*.rs", "Rust"),
+        "toml": ("*.toml", "TOML"),
+        ".toml": ("*.toml", "TOML"),
+        "yaml": ("*.yaml", "YAML"),
+        "yml": ("*.yml", "YAML"),
+    }
+    if raw in mapping:
+        return mapping[raw]
+    if raw.startswith(".") or raw.startswith("*."):
+        return (f"*{raw.removeprefix('*')}", raw)
     return None
 
 
@@ -702,6 +901,40 @@ def _handle_deterministic_request(request: str, options: RequestOptions, request
             for item in files:
                 modified_at = item.modified_at.strftime("%H:%M:%S")
                 typer.echo(f"{modified_at}  {item.size_bytes:>8} bytes  {item.path}")
+        return True
+
+    file_list = _match_file_listing_request(request)
+    if file_list is not None:
+        pattern, label = file_list
+        if options.dry_run:
+            _dry_run_message(
+                f'Get-ChildItem -Path . -Filter "{pattern}" -Recurse -File',
+                f"Lists workspace {label} files without changing them.",
+                options.json_output,
+                request_id=request_id,
+                user_request=request,
+                workspace_path=workspace_path,
+            )
+            return True
+        started_at = monotonic()
+        matched_files = operations.find_files(pattern)
+        _record_audit(
+            command=f"find_files('{pattern}')",
+            exit_code=0,
+            duration_seconds=monotonic() - started_at,
+            stdout=f"{len(matched_files)} {label} files found",
+            final_status="succeeded",
+            request_id=request_id,
+            user_request=request,
+            workspace_identifier=workspace_path,
+        )
+        if options.json_output:
+            _emit_json({"status": "success", "files": [str(item) for item in matched_files]})
+        elif not matched_files:
+            typer.echo(f"No {label} files found.")
+        else:
+            for matched_file in matched_files:
+                typer.echo(str(matched_file))
         return True
 
     if re.fullmatch(r"(?:show\s+)?git\s+status", request.strip(), re.I):
@@ -1138,6 +1371,56 @@ def config_init(
         console.print(f"Created {scope} configuration: {store.config_path}")
     else:
         console.print(f"Configuration already exists; left unchanged: {store.config_path}")
+
+
+@config_app.command("set-key")
+def config_set_key(
+    key: Annotated[
+        str | None,
+        typer.Argument(
+            help="Your Gemini API key. If omitted, you will be prompted securely.",
+        ),
+    ] = None,
+) -> None:
+    """Save your Gemini API key globally so Cmdora can plan commands anywhere."""
+    api_key = key
+    if not api_key:
+        api_key = typer.prompt("Enter your Gemini API key", hide_input=True)
+    api_key = api_key.strip()
+    if not api_key:
+        typer.echo("Error: API key cannot be empty.", err=True)
+        raise typer.Exit(code=1)
+
+    target_env = default_user_env_path()
+    try:
+        target_env.parent.mkdir(parents=True, exist_ok=True)
+        target_env.write_text(f"GEMINI_API_KEY={api_key}\n", encoding="utf-8")
+        console.print(f"[green]API key saved successfully to {target_env}[/green]")
+        console.print("You can now run natural-language commands with Cmdora from any directory.")
+    except OSError as error:
+        typer.echo(f"Error saving API key: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+
+@config_app.command("set-model")
+def config_set_model(
+    model: Annotated[
+        str,
+        typer.Argument(
+            help="Gemini model name to use for planning, e.g. 'gemini-3.1-flash-lite'.",
+        ),
+    ],
+) -> None:
+    """Set the Gemini model used for natural-language planning."""
+    store = ApplicationConfigStore()
+    try:
+        config = store.load()
+        config = config.model_copy(update={"model": model.strip()})
+        store.save(config)
+        console.print(f"[green]Planning model set to: {config.model}[/green]")
+    except Exception as error:
+        typer.echo(f"Error updating model: {error}", err=True)
+        raise typer.Exit(code=1) from error
 
 
 def _display_history_records(records: list[dict[str, Any]]) -> None:

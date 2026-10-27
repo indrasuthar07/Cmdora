@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from cmdora.context import SafeContext, sanitize_model_context
 from cmdora.schemas import ActionKind, ActionPlan
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 SYSTEM_PROMPT = """You are Cmdora's planning component. You propose plans only; you never execute
 actions.

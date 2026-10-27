@@ -5,6 +5,7 @@ from cmdora.config.app_config import (
     ApplicationConfigStore,
     ConfigError,
     default_config_path,
+    default_user_env_path,
 )
 from cmdora.config.repository_config import (
     RepositoryConfig,
@@ -17,6 +18,7 @@ __all__ = [
     "ApplicationConfigStore",
     "ConfigError",
     "default_config_path",
+    "default_user_env_path",
     "RepositoryConfig",
     "RepositoryConfigStore",
     "validate_repository_write_path",

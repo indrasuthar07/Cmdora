@@ -31,7 +31,7 @@ def test_version_is_available() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert "Cmdora 0.1.0" in result.output
+    assert "Cmdora 0.1.1" in result.output
 
 
 def test_config_init_creates_default_user_configuration(
@@ -46,7 +46,7 @@ def test_config_init_creates_default_user_configuration(
     assert config_path.is_file()
     assert "Created user configuration" in result.output
     assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
-        "model": "gemini-3.8-flash",
+        "model": "gemini-3.1-flash-lite",
         "default_timeout_seconds": 30,
         "max_output_characters": 8000,
         "default_autonomy_mode": "off",
@@ -525,3 +525,78 @@ def test_git_commit_workflow_stops_before_staging_or_committing_deleted_files(
     assert "deletion" in result.output
     stage.assert_not_called()
     commit.assert_not_called()
+
+
+def test_config_set_key_saves_api_key_to_user_env(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    env_dir = tmp_path / "app-data" / "CmdoraAI"
+    monkeypatch.setenv("APPDATA", str(tmp_path / "app-data"))
+
+    result = runner.invoke(app, ["config", "set-key", "test-api-key-12345"])
+
+    assert result.exit_code == 0
+    assert "API key saved successfully" in result.output
+    saved_file = env_dir / ".env"
+    assert saved_file.is_file()
+    assert saved_file.read_text(encoding="utf-8") == "GEMINI_API_KEY=test-api-key-12345\n"
+
+
+def test_config_set_key_prompts_when_argument_omitted(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    env_dir = tmp_path / "app-data" / "CmdoraAI"
+    monkeypatch.setenv("APPDATA", str(tmp_path / "app-data"))
+
+    result = runner.invoke(app, ["config", "set-key"], input="prompted-secret-key\n")
+
+    assert result.exit_code == 0
+    assert "API key saved successfully" in result.output
+    saved_file = env_dir / ".env"
+    assert saved_file.is_file()
+    assert saved_file.read_text(encoding="utf-8") == "GEMINI_API_KEY=prompted-secret-key\n"
+
+
+def test_config_set_model_updates_application_config(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    config_dir = tmp_path / "app-data" / "CmdoraAI"
+    monkeypatch.setenv("APPDATA", str(tmp_path / "app-data"))
+
+    result = runner.invoke(app, ["config", "set-model", "gemini-2.5-flash"])
+
+    assert result.exit_code == 0
+    assert "Planning model set to: gemini-2.5-flash" in result.output
+    config_file = config_dir / "config.toml"
+    assert config_file.is_file()
+    assert 'model = "gemini-2.5-flash"' in config_file.read_text(encoding="utf-8")
+
+
+def test_cli_list_python_files_runs_deterministically_and_shows_files(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "util.py").write_text("pass\n", encoding="utf-8")
+    (tmp_path / "sub" / "style.css").write_text("body {}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list all python files"])
+
+    assert result.exit_code == 0
+    assert "main.py" in result.output
+    assert "util.py" in result.output
+    assert "style.css" not in result.output
+
+
+def test_cli_list_python_files_dry_run_shows_plan_only(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["list all python files", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "Dry run only" in result.output
+    assert "Get-ChildItem" in result.output
+    assert "*.py" in result.output
