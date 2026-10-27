@@ -1,13 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cmdora — The Natural-Language PowerShell & Git Copilot</title>
-  <meta name="description" content="Cmdora turns plain English into safe, executable PowerShell and Git commands powered by Gemini 3.1 Flash-Lite.">
+  <title>Cmdora - The Natural-Language PowerShell</title>
+  <meta name="description"
+    content="Cmdora turns plain English into safe, executable PowerShell and Git commands powered by Gemini 3.1 Flash-Lite.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <style>
     :root {
       --bg: #F4E3BB;
@@ -23,7 +27,7 @@
       --text-dim: #717d71;
       --terminal-bg: #0d120d;
       --terminal-border: #1e291e;
-      --mono: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
+      --mono: 'Geist Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
       --sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
@@ -44,59 +48,6 @@
       display: flex;
       flex-direction: column;
       position: relative;
-    }
-
-    /* Soft Blurred Depth on #F4E3BB Canvas */
-    .blur-canvas {
-      position: fixed;
-      inset: 0;
-      overflow: hidden;
-      pointer-events: none;
-      z-index: 0;
-      background-color: var(--bg);
-    }
-
-    .blur-layer {
-      position: absolute;
-      border-radius: 50%;
-      pointer-events: none;
-    }
-
-    .blur-top {
-      top: -140px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 900px;
-      height: 520px;
-      background: radial-gradient(ellipse at center, rgba(0, 168, 0, 0.16) 0%, rgba(244, 227, 187, 0) 70%);
-      filter: blur(90px);
-    }
-
-    .blur-left {
-      top: 360px;
-      left: -150px;
-      width: 580px;
-      height: 580px;
-      background: radial-gradient(circle, rgba(230, 208, 150, 0.85) 0%, rgba(244, 227, 187, 0) 70%);
-      filter: blur(120px);
-    }
-
-    .blur-right {
-      top: 520px;
-      right: -120px;
-      width: 620px;
-      height: 620px;
-      background: radial-gradient(circle, rgba(0, 168, 0, 0.12) 0%, rgba(244, 227, 187, 0) 70%);
-      filter: blur(125px);
-    }
-
-    .blur-bottom {
-      bottom: -150px;
-      left: 30%;
-      width: 800px;
-      height: 480px;
-      background: radial-gradient(circle, rgba(225, 200, 140, 0.75) 0%, rgba(244, 227, 187, 0) 70%);
-      filter: blur(110px);
     }
 
     .container {
@@ -136,6 +87,12 @@
       color: var(--text);
     }
 
+    .brand-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+    }
+
     .brand-caret {
       font-family: var(--mono);
       font-size: 1.15rem;
@@ -148,6 +105,13 @@
       font-size: 1.1rem;
       letter-spacing: -0.02em;
       color: var(--text);
+    }
+
+    .brand-title2 {
+      font-weight: 800;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+      color: #016d01;
     }
 
     .brand-ver {
@@ -231,7 +195,7 @@
     }
 
     .text-primary {
-      color: #00A800;
+      color: #027d02;
       position: relative;
       display: inline-block;
     }
@@ -239,7 +203,7 @@
     .hero-desc {
       font-size: 1.18rem;
       color: var(--text-muted);
-      max-width: 640px;
+      max-width: 900px;
       margin: 0 auto 36px;
       font-weight: 500;
       line-height: 1.6;
@@ -261,8 +225,6 @@
       background: rgba(255, 255, 255, 0.9);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
       padding: 5px 6px 5px 18px;
       font-family: var(--mono);
       font-size: 0.95rem;
@@ -289,11 +251,9 @@
     }
 
     .copy-btn {
-      background: #00A800;
-      border: 1px solid #009200;
+      background: #027d02;
       color: #ffffff;
       padding: 8px 16px;
-      border-radius: 8px;
       font-size: 0.85rem;
       font-family: var(--sans);
       font-weight: 700;
@@ -312,8 +272,8 @@
     }
 
     .copy-btn.active {
-      background: #111611;
-      border-color: #111611;
+      background: #b8b8b8;
+      border-color: #b8b8b8;
       color: #ffffff;
     }
 
@@ -322,10 +282,8 @@
       align-items: center;
       gap: 8px;
       background: rgba(255, 252, 245, 0.7);
-      border: 1px solid var(--card-border);
       color: var(--text);
       padding: 10px 20px;
-      border-radius: 12px;
       font-size: 0.92rem;
       font-weight: 600;
       text-decoration: none;
@@ -347,83 +305,77 @@
       margin-bottom: 50px;
     }
 
-    /* Handcrafted Studio Terminal Window */
+    /* Authentic macOS Terminal Window */
     .terminal-container {
       max-width: 880px;
       margin: 0 auto 75px;
       background: var(--terminal-bg);
-      border: 1px solid var(--terminal-border);
-      border-radius: 14px;
-      box-shadow: 0 26px 70px -14px rgba(45, 35, 15, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.08);
+      border: 1px solid rgba(0, 0, 0, 0.28);
+      box-shadow: 0 24px 70px -10px rgba(35, 25, 10, 0.40), 0 0 0 1px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
       overflow: hidden;
       position: relative;
       text-align: left;
     }
 
     .terminal-topbar {
-      background: #151b15;
-      border-bottom: 1px solid #222d22;
-      padding: 12px 18px;
-      display: flex;
+      background: #192019;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      padding: 10px 16px;
+      display: grid;
+      grid-template-columns: 80px 1fr 80px;
       align-items: center;
-      justify-content: space-between;
       user-select: none;
     }
 
-    .terminal-left {
+    /* macOS Traffic Light Buttons */
+    .mac-traffic-lights {
       display: flex;
+      gap: 8px;
       align-items: center;
-      gap: 12px;
     }
 
-    .window-dots {
-      display: flex;
-      gap: 7px;
-    }
-
-    .w-dot {
-      width: 11px;
-      height: 11px;
+    .mac-dot {
+      width: 12px;
+      height: 12px;
       border-radius: 50%;
-      background: #283628;
-    }
-    .w-dot.active-dot {
-      background: #00A800;
-      box-shadow: 0 0 8px #00A800;
+      display: inline-block;
+      transition: filter 0.15s;
     }
 
-    .terminal-title {
-      font-family: var(--mono);
-      font-size: 0.8rem;
-      color: #92a992;
+    .mac-dot.close {
+      background-color: #ff5f56;
+      border: 1px solid #e0443e;
+    }
+
+    .mac-dot.minimize {
+      background-color: #ffbd2e;
+      border: 1px solid #dea123;
+    }
+
+    .mac-dot.maximize {
+      background-color: #27c93f;
+      border: 1px solid #1aab29;
+    }
+
+    .mac-traffic-lights:hover .mac-dot {
+      filter: brightness(1.08);
+    }
+
+    .terminal-title-center {
+      text-align: center;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      font-size: 0.80rem;
+      color: #9ba89b;
       font-weight: 500;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .terminal-topbar-right {
       display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .live-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      color: #00A800;
-      background: rgba(0, 168, 0, 0.12);
-      border: 1px solid rgba(0, 168, 0, 0.3);
-      padding: 3px 9px;
-      border-radius: 999px;
-    }
-
-    .live-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #00A800;
-      box-shadow: 0 0 6px #00A800;
-      animation: pulse 1.8s infinite;
+      justify-content: flex-end;
     }
 
     .terminal-screen {
@@ -474,8 +426,16 @@
     }
 
     @keyframes cursorBlink {
-      0%, 49% { opacity: 1; }
-      50%, 100% { opacity: 0; }
+
+      0%,
+      49% {
+        opacity: 1;
+      }
+
+      50%,
+      100% {
+        opacity: 0;
+      }
     }
 
     /* 3 Clean Minimal Quickstart Steps */
@@ -517,9 +477,9 @@
     .step-box {
       background: var(--card-bg);
       backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      /* -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--card-border);
-      border-radius: 14px;
+      border-radius: 14px; */
       padding: 26px;
       transition: all 0.2s;
       box-shadow: 0 4px 20px -2px rgba(70, 50, 20, 0.05);
@@ -572,7 +532,7 @@
     .step-copy-btn {
       background: transparent;
       border: none;
-      color: #00A800;
+      color: #bababa;
       cursor: pointer;
       font-family: var(--mono);
       font-size: 0.78rem;
@@ -584,7 +544,7 @@
 
     .step-copy-btn:hover {
       color: #ffffff;
-      background: #00A800;
+      background: #3e3e3e;
     }
 
     /* Resources & Links Row */
@@ -608,8 +568,8 @@
       background: var(--card-bg);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border);
-      border-radius: 14px;
+      /* border: 1px solid var(--card-border);
+      border-radius: 14px; */
       padding: 22px;
       display: flex;
       align-items: center;
@@ -631,12 +591,11 @@
       width: 46px;
       height: 46px;
       border-radius: 12px;
-      background: rgba(0, 168, 0, 0.12);
       border: 1px solid rgba(0, 168, 0, 0.25);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #00A800;
+      color: #79ff79;
       flex-shrink: 0;
       transition: all 0.2s;
     }
@@ -644,7 +603,7 @@
     .resource-link:hover .resource-icon-wrapper {
       border-color: #00A800;
       color: #ffffff;
-      background: #00A800;
+      background: #45c045;
       box-shadow: 0 4px 14px rgba(0, 168, 0, 0.35);
     }
 
@@ -665,7 +624,6 @@
     .svg-icon {
       width: 22px;
       height: 22px;
-      fill: currentColor;
     }
 
     /* Minimal Stylish Developer Footer */
@@ -710,8 +668,17 @@
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.35; transform: scale(0.8); }
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.35;
+        transform: scale(0.8);
+      }
     }
 
     .footer-right {
@@ -733,6 +700,7 @@
     }
   </style>
 </head>
+
 <body>
   <!-- Soft Blurred #F4E3BB Background Depth Canvas -->
   <div class="blur-canvas">
@@ -747,19 +715,25 @@
     <div class="container">
       <div class="header-inner">
         <a href="#" class="brand-mark">
-          <span class="brand-caret">&gt;_</span>
-          <span class="brand-title">cmdora</span>
-          <span class="brand-ver">v0.1.1</span>
+          <span class="brand-name">
+            <span class="brand-title2">cmd</span><span class="brand-title">ora</span>
+          </span>
         </a>
 
         <div class="header-nav">
           <a href="#quickstart" class="header-link">Guide</a>
           <a href="https://github.com/indrasuthar07/Cmdora" target="_blank" rel="noopener" class="header-link">
-            <svg class="svg-icon" style="width: 18px; height: 18px;" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            <svg class="svg-icon" style="width: 18px; height: 18px; color: #fff" viewBox="0 0 24 24">
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+            </svg>
             GitHub
           </a>
           <a href="https://pypi.org/project/cmdora/" target="_blank" rel="noopener" class="header-link">
-            <svg class="svg-icon" style="width: 17px; height: 17px;" viewBox="0 0 24 24"><path d="M12 0L1.75 6.01v11.98L12 24l10.25-6.01V6.01L12 0zm0 2.27l8.28 4.86-3.56 2.08L8.44 4.35 12 2.27zm-1.02 5.37l8.28 4.85-3.25 1.9-8.28-4.85 3.25-1.9zm-8.21.57l3.64 2.13v8.52l-3.64-2.13V8.21zm9.23 13.52L3.72 16.87l3.56-2.08 8.28 4.85-3.56 2.09zm1-5.37L4.72 11.5l3.25-1.9 8.28 4.85-3.25 1.9zm7.21-1.57l-3.64 2.13V9.98l3.64-2.13v8.52z"/></svg>
+            <svg class="svg-icon" style="width: 17px; height: 17px;" viewBox="0 0 24 24">
+              <path
+                d="M12 0L1.75 6.01v11.98L12 24l10.25-6.01V6.01L12 0zm0 2.27l8.28 4.86-3.56 2.08L8.44 4.35 12 2.27zm-1.02 5.37l8.28 4.85-3.25 1.9-8.28-4.85 3.25-1.9zm-8.21.57l3.64 2.13v8.52l-3.64-2.13V8.21zm9.23 13.52L3.72 16.87l3.56-2.08 8.28 4.85-3.56 2.09zm1-5.37L4.72 11.5l3.25-1.9 8.28 4.85-3.25 1.9zm7.21-1.57l-3.64 2.13V9.98l3.64-2.13v8.52z" />
+            </svg>
             PyPI
           </a>
         </div>
@@ -770,12 +744,10 @@
   <main class="container">
     <!-- Human & Premium Hero Section -->
     <section class="hero">
-      <div class="hero-eyebrow">
-        <span></span> Cmdora &middot; PowerShell &amp; Git Copilot
-      </div>
-      <h1>Natural language for <br><span class="text-primary">PowerShell &amp; Git</span></h1>
+      <h1>Tell your terminal what you want. <span> </span><span class="text-primary">Not how.</span></h1>
       <p class="hero-desc">
-        Describe what you want to achieve in plain English. Cmdora verifies the safety boundaries, plans the exact commands, and executes them with full workspace containment.
+        Describe what you want to achieve in plain English. Cmdora verifies the safety boundaries, plans the exact
+        commands, and executes them with full workspace containment.
       </p>
 
       <!-- Clean Action Area -->
@@ -784,7 +756,10 @@
           <span class="prompt-sym">$</span>
           <code id="main-install-cmd">pip install cmdora</code>
           <button class="copy-btn" onclick="copyMainInstall()">
-            <svg class="svg-icon" style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            <svg class="svg-icon" style="width: 14px; height: 14px; color: #fff" viewBox="0 0 24 24">
+              <path
+                d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+            </svg>
             <span id="main-copy-label">Copy</span>
           </button>
         </div>
@@ -792,32 +767,22 @@
           Explore Guide &darr;
         </a>
       </div>
-
-      <div class="hero-meta">
-        Windows PowerShell &middot; Python 3.12+ &middot; Powered by Gemini 3.1 Flash-Lite
-      </div>
     </section>
 
-    <!-- Handcrafted Studio Terminal Window (Commands Loop One by One) -->
+    <!-- macOS Terminal Window (Commands Loop One by One) -->
     <div class="terminal-container">
       <div class="terminal-topbar">
-        <div class="terminal-left">
-          <div class="window-dots">
-            <div class="w-dot"></div>
-            <div class="w-dot"></div>
-            <div class="w-dot active-dot"></div>
-          </div>
-          <span class="terminal-title">
-            <span>powershell.exe</span> &mdash; <span>cmdora</span>
-          </span>
+        <div class="mac-traffic-lights">
+          <span class="mac-dot close"></span>
+          <span class="mac-dot minimize"></span>
+          <span class="mac-dot maximize"></span>
         </div>
-        <div class="live-status">
-          <span class="live-dot"></span>
-          <span>LIVE DEMO</span>
+        <div class="terminal-title-center">
+          dev@macbook: ~/Cmdora
         </div>
       </div>
       <div class="terminal-screen" id="term-display">
-        <!-- Realistic PowerShell execution animation rendered via JS -->
+
       </div>
     </div>
 
@@ -830,7 +795,7 @@
 
       <div class="steps-wrapper">
         <div class="step-box">
-          <div class="step-index">01 &mdash; INSTALL</div>
+          <div class="step-index">01. INSTALL</div>
           <h3 class="step-heading">Install Cmdora</h3>
           <p class="step-detail">Available on PyPI with clean Windows PowerShell integration.</p>
           <div class="step-codebox">
@@ -840,7 +805,7 @@
         </div>
 
         <div class="step-box">
-          <div class="step-index">02 &mdash; ONBOARD</div>
+          <div class="step-index">02. ONBOARD</div>
           <h3 class="step-heading">Configure API Key</h3>
           <p class="step-detail">Saves to system AppData without writing secrets to your repository.</p>
           <div class="step-codebox">
@@ -850,12 +815,12 @@
         </div>
 
         <div class="step-box">
-          <div class="step-index">03 &mdash; EXECUTE</div>
+          <div class="step-index">03. EXECUTE</div>
           <h3 class="step-heading">Run Any Task</h3>
           <p class="step-detail">Cmdora translates your intent, verifies safety policy, and executes.</p>
           <div class="step-codebox">
-            <code>cmdora "list all python files"</code>
-            <button class="step-copy-btn" onclick="copySnippetText('cmdora \"list all python files\"', this)">copy</button>
+            <code>cmdora "Do the task"</code>
+            <button class="step-copy-btn" onclick="copySnippetText('cmdora \" Do the task\"', this)">copy</button>
           </div>
         </div>
       </div>
@@ -866,17 +831,23 @@
       <div class="links-grid">
         <a href="https://github.com/indrasuthar07/Cmdora" target="_blank" rel="noopener" class="resource-link">
           <div class="resource-icon-wrapper">
-            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+            </svg>
           </div>
           <div class="resource-meta">
-            <h4>GitHub Repository</h4>
+            <h4>GitHub Repo</h4>
             <span>indrasuthar07/Cmdora</span>
           </div>
         </a>
 
         <a href="https://pypi.org/project/cmdora/" target="_blank" rel="noopener" class="resource-link">
           <div class="resource-icon-wrapper">
-            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 0L1.75 6.01v11.98L12 24l10.25-6.01V6.01L12 0zm0 2.27l8.28 4.86-3.56 2.08L8.44 4.35 12 2.27zm-1.02 5.37l8.28 4.85-3.25 1.9-8.28-4.85 3.25-1.9zm-8.21.57l3.64 2.13v8.52l-3.64-2.13V8.21zm9.23 13.52L3.72 16.87l3.56-2.08 8.28 4.85-3.56 2.09zm1-5.37L4.72 11.5l3.25-1.9 8.28 4.85-3.25 1.9zm7.21-1.57l-3.64 2.13V9.98l3.64-2.13v8.52z"/></svg>
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <path
+                d="M12 0L1.75 6.01v11.98L12 24l10.25-6.01V6.01L12 0zm0 2.27l8.28 4.86-3.56 2.08L8.44 4.35 12 2.27zm-1.02 5.37l8.28 4.85-3.25 1.9-8.28-4.85 3.25-1.9zm-8.21.57l3.64 2.13v8.52l-3.64-2.13V8.21zm9.23 13.52L3.72 16.87l3.56-2.08 8.28 4.85-3.56 2.09zm1-5.37L4.72 11.5l3.25-1.9 8.28 4.85-3.25 1.9zm7.21-1.57l-3.64 2.13V9.98l3.64-2.13v8.52z" />
+            </svg>
           </div>
           <div class="resource-meta">
             <h4>PyPI Package</h4>
@@ -886,7 +857,10 @@
 
         <a href="https://github.com/indrasuthar07/Cmdora/issues" target="_blank" rel="noopener" class="resource-link">
           <div class="resource-icon-wrapper">
-            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <svg class="svg-icon" viewBox="0 0 24 24">
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+            </svg>
           </div>
           <div class="resource-meta">
             <h4>Report an Issue</h4>
@@ -901,11 +875,10 @@
   <footer>
     <div class="container footer-content">
       <div class="footer-status">
-        <span class="status-pulse"></span>
-        <span>Cmdora Engine &middot; Active v0.1.1</span>
+        <span>Cmdora | Active v0.1.1</span>
       </div>
       <div class="footer-right">
-        <span>MIT License &middot; <a href="https://github.com/indrasuthar07/Cmdora" target="_blank" rel="noopener">cmdora-team</a></span>
+        <span>MIT License</span>
       </div>
     </div>
   </footer>
@@ -938,19 +911,19 @@
       });
     }
 
-    // 5 Genuine, Non-AI-ish PowerShell Commands & Outputs
+    // 5 Genuine Commands & Outputs (macOS Styled)
     const scenarios = [
       {
-        command: 'cmdora "list all python files"',
+        command: 'cmdora "list all python files in the src"',
         lines: [
-          { text: "scripts\\evaluate_llm.py\n", class: "term-out" },
-          { text: "src\\cmdora\\__init__.py\n", class: "term-out" },
-          { text: "src\\cmdora\\cli\\main.py\n", class: "term-out" },
-          { text: "src\\cmdora\\executor\\powershell.py\n", class: "term-out" },
-          { text: "src\\cmdora\\llm\\gemini.py\n", class: "term-out" },
-          { text: "src\\cmdora\\safety\\policy.py\n", class: "term-out" },
-          { text: "tests\\unit\\test_cli.py\n", class: "term-out" },
-          { text: "tests\\unit\\test_gemini_planner.py\n", class: "term-out" },
+          { text: "scripts/evaluate_llm.py\n", class: "term-out" },
+          { text: "src/cmdora/__init__.py\n", class: "term-out" },
+          { text: "src/cmdora/cli/main.py\n", class: "term-out" },
+          { text: "src/cmdora/executor/powershell.py\n", class: "term-out" },
+          { text: "src/cmdora/llm/gemini.py\n", class: "term-out" },
+          { text: "src/cmdora/safety/policy.py\n", class: "term-out" },
+          { text: "tests/unit/test_cli.py\n", class: "term-out" },
+          { text: "tests/unit/test_gemini_planner.py\n", class: "term-out" },
           { text: "42 files listed.\n", class: "term-success" }
         ]
       },
@@ -967,7 +940,7 @@
         lines: [
           { text: "Dry run only — no command executed.\n\n", class: "term-warn" },
           { text: "Proposed command:\n", class: "term-out" },
-          { text: "Remove-Item -Path .\\dist\\* -Recurse -Force\n\n", class: "term-cmd" },
+          { text: "rm -rf ./dist/*\n\n", class: "term-cmd" },
           { text: "Effect:\n", class: "term-out" },
           { text: "Deletes build distribution packages without affecting source files.\n", class: "term-out" }
         ]
@@ -976,7 +949,7 @@
         command: 'cmdora config set-key',
         lines: [
           { text: "Enter your Gemini API key: ****************************************\n", class: "term-out" },
-          { text: "Saved GEMINI_API_KEY to C:\\Users\\dev\\AppData\\Roaming\\CmdoraAI\\.env\n", class: "term-success" },
+          { text: "Saved GEMINI_API_KEY to ~/.config/cmdora/.env\n", class: "term-success" },
           { text: "Model: gemini-3.1-flash-lite\n", class: "term-out" },
           { text: "Setup completed.\n", class: "term-success" }
         ]
@@ -984,7 +957,7 @@
       {
         command: 'cmdora "count lines of python code in src"',
         lines: [
-          { text: "(Get-ChildItem -Path .\\src -Filter *.py -Recurse | Get-Content | Measure-Object -Line).Lines\n", class: "term-cmd" },
+          { text: "find src -name \"*.py\" -exec wc -l {} + | awk '{s+=$1} END {print s}'\n", class: "term-cmd" },
           { text: "3240\n", class: "term-success" }
         ]
       }
@@ -1001,16 +974,16 @@
     function runScenario() {
       clearAllTimeouts();
       const term = document.getElementById('term-display');
-      
+
       // Clear terminal completely before each new command starts
       term.innerHTML = '';
 
       const scenario = scenarios[currentScenarioIdx];
 
-      // Insert PowerShell prompt
+      // Insert macOS Terminal prompt
       const promptSpan = document.createElement('span');
       promptSpan.className = 'term-prompt';
-      promptSpan.textContent = 'PS C:\\Users\\dev\\Cmdora> ';
+      promptSpan.textContent = 'dev@macbook ~/Cmdora % ';
       term.appendChild(promptSpan);
 
       // Element where characters are typed
@@ -1073,4 +1046,5 @@
     });
   </script>
 </body>
+
 </html>
