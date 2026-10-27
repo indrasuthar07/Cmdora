@@ -427,14 +427,15 @@
     }
 
     .terminal-screen {
-      padding: 26px 28px;
+      padding: 24px 28px;
       font-family: var(--mono);
-      font-size: 0.92rem;
-      line-height: 1.7;
+      font-size: 0.90rem;
+      line-height: 1.65;
+      height: 350px;
       min-height: 350px;
       color: #d1eed1;
       white-space: pre-wrap;
-      overflow-x: auto;
+      overflow-y: auto;
     }
 
     .term-prompt {
@@ -447,33 +448,18 @@
       font-weight: 600;
     }
 
-    .term-badge {
-      color: #38bdf8;
+    .term-out {
+      color: #b0ccb0;
+    }
+
+    .term-warn {
+      color: #facc15;
       font-weight: 600;
-    }
-
-    .term-exec {
-      color: #fbbf24;
-      font-weight: 500;
-    }
-
-    .term-file {
-      color: #aae0aa;
-      display: block;
     }
 
     .term-success {
       color: #00A800;
-      font-weight: 700;
-    }
-
-    .term-warn {
-      color: #fbbf24;
       font-weight: 600;
-    }
-
-    .term-dim {
-      color: #718d71;
     }
 
     .term-cursor {
@@ -812,7 +798,7 @@
       </div>
     </section>
 
-    <!-- Handcrafted Studio Terminal Window (Looping Forever) -->
+    <!-- Handcrafted Studio Terminal Window (Commands Loop One by One) -->
     <div class="terminal-container">
       <div class="terminal-topbar">
         <div class="terminal-left">
@@ -827,11 +813,11 @@
         </div>
         <div class="live-status">
           <span class="live-dot"></span>
-          <span>LIVE PREVIEW</span>
+          <span>LIVE DEMO</span>
         </div>
       </div>
       <div class="terminal-screen" id="term-display">
-        <!-- Interactive typing and infinite looping terminal output rendered via JS -->
+        <!-- Realistic PowerShell execution animation rendered via JS -->
       </div>
     </div>
 
@@ -952,115 +938,138 @@
       });
     }
 
-    // Realistic Terminal Execution Sequence (Replays Forever)
-    const sequence = [
-      { type: "prompt", text: "PS C:\\workspace\\cmdora> " },
-      { type: "type", text: 'cmdora "list all python files"' },
-      { type: "newline" },
-      { type: "output", class: "term-badge", text: "⚡ Intent: Find and list Python source files in repository\n", delay: 240 },
-      { type: "output", class: "term-exec", text: "↳ Executing: Get-ChildItem -Path . -Filter \"*.py\" -Recurse\n\n", delay: 180 },
-      { type: "output", class: "term-file", text: "  • src\\cmdora\\cli\\main.py\n", delay: 75 },
-      { type: "output", class: "term-file", text: "  • src\\cmdora\\executor\\powershell.py\n", delay: 65 },
-      { type: "output", class: "term-file", text: "  • src\\cmdora\\llm\\gemini.py\n", delay: 65 },
-      { type: "output", class: "term-file", text: "  • src\\cmdora\\safety\\policy.py\n", delay: 65 },
-      { type: "output", class: "term-file", text: "  • tests\\unit\\test_cli.py\n", delay: 65 },
-      { type: "output", class: "term-file", text: "  • tests\\unit\\test_gemini_planner.py\n\n", delay: 85 },
-      { type: "output", class: "term-success", text: "✔ Scan complete: 42 Python files located in 0.18s\n\n", delay: 350 },
-      
-      { type: "prompt", text: "PS C:\\workspace\\cmdora> ", delay: 700 },
-      { type: "type", text: 'cmdora "undo last commit without losing changes" --dry-run' },
-      { type: "newline" },
-      { type: "output", class: "term-warn", text: "🛡️ Safety Policy: REQUIRE_APPROVAL\n", delay: 200 },
-      { type: "output", class: "term-dim", text: "↳ Dry-Run inspection active — no state modified:\n\n", delay: 120 },
-      { type: "output", class: "term-cmd", text: "  git reset --soft HEAD~1\n\n", delay: 150 },
-      { type: "output", class: "term-dim", text: "↳ Anticipated Effect: Rewinds commit by 1 revision while preserving staged working tree edits.\n", delay: 200 }
+    // 5 Genuine, Non-AI-ish PowerShell Commands & Outputs
+    const scenarios = [
+      {
+        command: 'cmdora "list all python files"',
+        lines: [
+          { text: "scripts\\evaluate_llm.py\n", class: "term-out" },
+          { text: "src\\cmdora\\__init__.py\n", class: "term-out" },
+          { text: "src\\cmdora\\cli\\main.py\n", class: "term-out" },
+          { text: "src\\cmdora\\executor\\powershell.py\n", class: "term-out" },
+          { text: "src\\cmdora\\llm\\gemini.py\n", class: "term-out" },
+          { text: "src\\cmdora\\safety\\policy.py\n", class: "term-out" },
+          { text: "tests\\unit\\test_cli.py\n", class: "term-out" },
+          { text: "tests\\unit\\test_gemini_planner.py\n", class: "term-out" },
+          { text: "42 files listed.\n", class: "term-success" }
+        ]
+      },
+      {
+        command: 'cmdora "show git status and branch"',
+        lines: [
+          { text: "On branch feat/publish-prep\n", class: "term-out" },
+          { text: "Your branch is up to date with 'origin/feat/publish-prep'.\n\n", class: "term-out" },
+          { text: "nothing to commit, working tree clean\n", class: "term-success" }
+        ]
+      },
+      {
+        command: 'cmdora "clean dist folder" --dry-run',
+        lines: [
+          { text: "Dry run only — no command executed.\n\n", class: "term-warn" },
+          { text: "Proposed command:\n", class: "term-out" },
+          { text: "Remove-Item -Path .\\dist\\* -Recurse -Force\n\n", class: "term-cmd" },
+          { text: "Effect:\n", class: "term-out" },
+          { text: "Deletes build distribution packages without affecting source files.\n", class: "term-out" }
+        ]
+      },
+      {
+        command: 'cmdora config set-key',
+        lines: [
+          { text: "Enter your Gemini API key: ****************************************\n", class: "term-out" },
+          { text: "Saved GEMINI_API_KEY to C:\\Users\\dev\\AppData\\Roaming\\CmdoraAI\\.env\n", class: "term-success" },
+          { text: "Model: gemini-3.1-flash-lite\n", class: "term-out" },
+          { text: "Setup completed.\n", class: "term-success" }
+        ]
+      },
+      {
+        command: 'cmdora "count lines of python code in src"',
+        lines: [
+          { text: "(Get-ChildItem -Path .\\src -Filter *.py -Recurse | Get-Content | Measure-Object -Line).Lines\n", class: "term-cmd" },
+          { text: "3240\n", class: "term-success" }
+        ]
+      }
     ];
 
-    let playbackTimeouts = [];
+    let currentScenarioIdx = 0;
+    let timeouts = [];
 
-    function clearPlayback() {
-      playbackTimeouts.forEach(t => clearTimeout(t));
-      playbackTimeouts = [];
+    function clearAllTimeouts() {
+      timeouts.forEach(t => clearTimeout(t));
+      timeouts = [];
     }
 
-    function startTerminalPlayback() {
-      clearPlayback();
+    function runScenario() {
+      clearAllTimeouts();
       const term = document.getElementById('term-display');
+      
+      // Clear terminal completely before each new command starts
       term.innerHTML = '';
 
-      let seqIndex = 0;
+      const scenario = scenarios[currentScenarioIdx];
 
-      function executeNext() {
-        // When sequence finishes, pause 3.5s gracefully, then replay forever!
-        if (seqIndex >= sequence.length) {
-          const replayTimer = setTimeout(() => {
-            startTerminalPlayback();
-          }, 3500);
-          playbackTimeouts.push(replayTimer);
-          return;
-        }
+      // Insert PowerShell prompt
+      const promptSpan = document.createElement('span');
+      promptSpan.className = 'term-prompt';
+      promptSpan.textContent = 'PS C:\\Users\\dev\\Cmdora> ';
+      term.appendChild(promptSpan);
 
-        const item = sequence[seqIndex++];
+      // Element where characters are typed
+      const cmdSpan = document.createElement('span');
+      cmdSpan.className = 'term-cmd';
+      term.appendChild(cmdSpan);
 
-        if (item.type === "prompt") {
-          const span = document.createElement('span');
-          span.className = "term-prompt";
-          span.textContent = item.text;
-          term.appendChild(span);
+      // Blinking cursor
+      const cursorSpan = document.createElement('span');
+      cursorSpan.className = 'term-cursor';
+      term.appendChild(cursorSpan);
 
-          const typeTarget = document.createElement('span');
-          typeTarget.className = "term-cmd";
-          term.appendChild(typeTarget);
+      let charIdx = 0;
+      const cmd = scenario.command;
 
-          const cursor = document.createElement('span');
-          cursor.className = "term-cursor";
-          term.appendChild(cursor);
+      function typeChar() {
+        if (charIdx < cmd.length) {
+          cmdSpan.textContent += cmd[charIdx++];
+          // Natural typing speed variation (20ms - 45ms)
+          const delay = 22 + Math.random() * 25;
+          timeouts.push(setTimeout(typeChar, delay));
+        } else {
+          // Done typing: remove cursor and add newline
+          cursorSpan.remove();
+          term.appendChild(document.createTextNode('\n'));
 
-          executeNext();
-        } 
-        else if (item.type === "type") {
-          const targets = term.getElementsByClassName('term-cmd');
-          const activeTarget = targets[targets.length - 1];
-          const text = item.text;
-          let charIdx = 0;
-
-          function typeChar() {
-            if (charIdx < text.length) {
-              activeTarget.textContent += text[charIdx++];
-              // Natural human typing rhythm
-              const delay = 20 + Math.random() * 25;
-              const t = setTimeout(typeChar, delay);
-              playbackTimeouts.push(t);
-            } else {
-              const t = setTimeout(executeNext, 200);
-              playbackTimeouts.push(t);
-            }
-          }
-          typeChar();
-        } 
-        else if (item.type === "newline") {
-          const cursors = term.getElementsByClassName('term-cursor');
-          if (cursors.length > 0) {
-            cursors[cursors.length - 1].remove();
-          }
-          term.appendChild(document.createTextNode("\n"));
-          executeNext();
-        } 
-        else if (item.type === "output") {
-          const span = document.createElement('span');
-          span.className = item.class;
-          span.textContent = item.text;
-          term.appendChild(span);
-          const t = setTimeout(executeNext, item.delay || 100);
-          playbackTimeouts.push(t);
+          // Brief pause before command output begins
+          timeouts.push(setTimeout(renderOutputLines, 160));
         }
       }
 
-      executeNext();
+      function renderOutputLines() {
+        let lineIdx = 0;
+        function printNextLine() {
+          if (lineIdx < scenario.lines.length) {
+            const item = scenario.lines[lineIdx++];
+            const span = document.createElement('span');
+            span.className = item.class;
+            span.textContent = item.text;
+            term.appendChild(span);
+            timeouts.push(setTimeout(printNextLine, 55));
+          } else {
+            // Output fully rendered: hold for 3000ms (3s) so user can read it
+            timeouts.push(setTimeout(() => {
+              // Clear screen, advance to next command and loop forever!
+              currentScenarioIdx = (currentScenarioIdx + 1) % scenarios.length;
+              runScenario();
+            }, 3000));
+          }
+        }
+        printNextLine();
+      }
+
+      // Start typing after brief delay
+      timeouts.push(setTimeout(typeChar, 250));
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      startTerminalPlayback();
+      runScenario();
     });
   </script>
 </body>
