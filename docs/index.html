@@ -3,27 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cmdora — Natural-Language PowerShell & Git Copilot</title>
+  <title>Cmdora — The Natural-Language PowerShell & Git Copilot</title>
   <meta name="description" content="Cmdora turns plain English into safe, executable PowerShell and Git commands powered by Gemini 3.1 Flash-Lite.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #F4E3BB;
-      --bg-warm-blur: rgba(234, 218, 174, 0.6);
-      --primary: #008500;
-      --primary-accent: #00A800;
-      --primary-subtle: rgba(0, 168, 0, 0.12);
-      --card-bg: rgba(255, 253, 247, 0.65);
-      --card-bg-hover: rgba(255, 255, 255, 0.9);
-      --card-border: rgba(0, 133, 0, 0.22);
-      --card-border-hover: rgba(0, 133, 0, 0.5);
-      --text: #191e19;
-      --text-muted: #4e584e;
+      --primary: #00A800;
+      --primary-dark: #008000;
+      --primary-subtle: rgba(0, 168, 0, 0.10);
+      --card-bg: rgba(255, 252, 245, 0.75);
+      --card-bg-hover: rgba(255, 255, 255, 0.95);
+      --card-border: rgba(0, 168, 0, 0.20);
+      --card-border-hover: rgba(0, 168, 0, 0.45);
+      --text: #121612;
+      --text-muted: #495449;
       --text-dim: #717d71;
-      --terminal-bg: #111611;
-      --terminal-border: #222e22;
+      --terminal-bg: #0d120d;
+      --terminal-border: #1e291e;
       --mono: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
       --sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
@@ -47,7 +46,7 @@
       position: relative;
     }
 
-    /* Soft Blurred #F4E3BB Depth & Warm Atmospheric Glows */
+    /* Soft Blurred Depth on #F4E3BB Canvas */
     .blur-canvas {
       position: fixed;
       inset: 0;
@@ -63,45 +62,45 @@
       pointer-events: none;
     }
 
-    .blur-1 {
-      top: -150px;
+    .blur-top {
+      top: -140px;
       left: 50%;
       transform: translateX(-50%);
-      width: 850px;
-      height: 480px;
-      background: radial-gradient(circle, rgba(0, 168, 0, 0.18) 0%, rgba(244, 227, 187, 0) 70%);
-      filter: blur(100px);
+      width: 900px;
+      height: 520px;
+      background: radial-gradient(ellipse at center, rgba(0, 168, 0, 0.16) 0%, rgba(244, 227, 187, 0) 70%);
+      filter: blur(90px);
     }
 
-    .blur-2 {
-      top: 350px;
-      left: -120px;
-      width: 550px;
-      height: 550px;
-      background: radial-gradient(circle, rgba(230, 208, 150, 0.8) 0%, rgba(244, 227, 187, 0) 70%);
+    .blur-left {
+      top: 360px;
+      left: -150px;
+      width: 580px;
+      height: 580px;
+      background: radial-gradient(circle, rgba(230, 208, 150, 0.85) 0%, rgba(244, 227, 187, 0) 70%);
       filter: blur(120px);
     }
 
-    .blur-3 {
-      top: 500px;
-      right: -100px;
-      width: 600px;
-      height: 600px;
+    .blur-right {
+      top: 520px;
+      right: -120px;
+      width: 620px;
+      height: 620px;
       background: radial-gradient(circle, rgba(0, 168, 0, 0.12) 0%, rgba(244, 227, 187, 0) 70%);
-      filter: blur(130px);
+      filter: blur(125px);
     }
 
-    .blur-4 {
+    .blur-bottom {
       bottom: -150px;
       left: 30%;
-      width: 750px;
-      height: 450px;
-      background: radial-gradient(circle, rgba(225, 200, 140, 0.7) 0%, rgba(244, 227, 187, 0) 70%);
+      width: 800px;
+      height: 480px;
+      background: radial-gradient(circle, rgba(225, 200, 140, 0.75) 0%, rgba(244, 227, 187, 0) 70%);
       filter: blur(110px);
     }
 
     .container {
-      max-width: 960px;
+      max-width: 980px;
       margin: 0 auto;
       padding: 0 24px;
       position: relative;
@@ -109,9 +108,9 @@
       width: 100%;
     }
 
-    /* Bespoke Header */
+    /* Minimalist Human Header */
     header {
-      padding: 24px 0 16px;
+      padding: 28px 0 20px;
       position: relative;
       z-index: 10;
     }
@@ -121,12 +120,12 @@
       align-items: center;
       justify-content: space-between;
       border: 1px solid var(--card-border);
-      background: rgba(255, 252, 244, 0.65);
+      background: rgba(255, 252, 245, 0.70);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      padding: 12px 20px;
+      padding: 12px 22px;
       border-radius: 14px;
-      box-shadow: 0 4px 20px -2px rgba(80, 60, 20, 0.08);
+      box-shadow: 0 4px 20px -2px rgba(70, 50, 20, 0.06);
     }
 
     .brand-mark {
@@ -165,13 +164,13 @@
     .header-nav {
       display: flex;
       align-items: center;
-      gap: 18px;
+      gap: 20px;
     }
 
     .header-link {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.88rem;
+      font-size: 0.9rem;
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -188,100 +187,114 @@
       color: var(--primary);
     }
 
-    /* Hero Section */
+    /* Human, Clean & Premium Hero Section */
     .hero {
       text-align: center;
       padding: 55px 0 40px;
     }
 
-    .hero-tag {
+    .hero-eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       font-family: var(--mono);
-      font-size: 0.82rem;
-      font-weight: 600;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--primary);
-      background: rgba(255, 255, 255, 0.65);
+      background: rgba(255, 255, 255, 0.7);
       border: 1px solid var(--card-border);
-      padding: 5px 16px;
+      padding: 6px 16px;
       border-radius: 999px;
       margin-bottom: 24px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
     }
 
-    .hero-tag-dot {
-      width: 8px;
-      height: 8px;
+    .hero-eyebrow span {
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: var(--primary-accent);
-      box-shadow: 0 0 8px var(--primary-accent);
+      background: var(--primary);
     }
 
     .hero h1 {
-      font-size: clamp(2.4rem, 5.2vw, 3.6rem);
+      font-size: clamp(2.5rem, 5.6vw, 3.8rem);
       font-weight: 800;
       letter-spacing: -0.04em;
-      line-height: 1.15;
-      margin-bottom: 18px;
-      color: #141a14;
+      line-height: 1.12;
+      margin-bottom: 20px;
+      color: #111611;
+      max-width: 820px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
     .text-primary {
       color: #00A800;
-      text-shadow: 0 0 25px rgba(0, 168, 0, 0.25);
+      position: relative;
+      display: inline-block;
     }
 
     .hero-desc {
-      font-size: 1.15rem;
+      font-size: 1.18rem;
       color: var(--text-muted);
-      max-width: 630px;
-      margin: 0 auto 34px;
+      max-width: 640px;
+      margin: 0 auto 36px;
       font-weight: 500;
+      line-height: 1.6;
     }
 
-    /* Install Command Box */
-    .install-box {
+    /* Premium Dual Action Row */
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .install-bar {
       display: inline-flex;
       align-items: center;
-      background: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.9);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--card-border);
       border-radius: 12px;
-      padding: 6px 8px 6px 18px;
+      padding: 5px 6px 5px 18px;
       font-family: var(--mono);
       font-size: 0.95rem;
-      box-shadow: 0 8px 30px -4px rgba(80, 60, 20, 0.12);
-      margin-bottom: 45px;
+      box-shadow: 0 8px 24px -4px rgba(70, 50, 20, 0.10);
       transition: all 0.2s;
     }
 
-    .install-box:hover {
+    .install-bar:hover {
       border-color: var(--primary);
-      box-shadow: 0 10px 35px -4px rgba(0, 168, 0, 0.18);
+      box-shadow: 0 10px 30px -4px rgba(0, 168, 0, 0.20);
     }
 
-    .install-prefix {
+    .install-bar .prompt-sym {
       color: var(--primary);
       margin-right: 12px;
       user-select: none;
       font-weight: 700;
     }
 
-    .install-code {
-      color: #1a221a;
+    .install-bar code {
+      color: #121812;
       margin-right: 18px;
       font-weight: 600;
     }
 
-    .copy-button {
+    .copy-btn {
       background: #00A800;
-      border: 1px solid #009000;
+      border: 1px solid #009200;
       color: #ffffff;
       padding: 8px 16px;
       border-radius: 8px;
-      font-size: 0.84rem;
+      font-size: 0.85rem;
       font-family: var(--sans);
       font-weight: 700;
       cursor: pointer;
@@ -292,33 +305,64 @@
       box-shadow: 0 2px 8px rgba(0, 168, 0, 0.3);
     }
 
-    .copy-button:hover {
-      background: #009400;
+    .copy-btn:hover {
+      background: #009600;
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 168, 0, 0.4);
+      box-shadow: 0 4px 12px rgba(0, 168, 0, 0.38);
     }
 
-    .copy-button.active {
-      background: #141a14;
-      border-color: #141a14;
+    .copy-btn.active {
+      background: #111611;
+      border-color: #111611;
       color: #ffffff;
     }
 
-    /* Single Clean Terminal Demo */
+    .hero-secondary-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 252, 245, 0.7);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+    }
+
+    .hero-secondary-btn:hover {
+      background: #ffffff;
+      border-color: var(--primary);
+      color: var(--primary);
+      transform: translateY(-1px);
+    }
+
+    .hero-meta {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-bottom: 50px;
+    }
+
+    /* Handcrafted Studio Terminal Window */
     .terminal-container {
-      max-width: 860px;
-      margin: 0 auto 70px;
+      max-width: 880px;
+      margin: 0 auto 75px;
       background: var(--terminal-bg);
       border: 1px solid var(--terminal-border);
       border-radius: 14px;
-      box-shadow: 0 24px 60px -12px rgba(40, 30, 10, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 26px 70px -14px rgba(45, 35, 15, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.08);
       overflow: hidden;
       position: relative;
+      text-align: left;
     }
 
     .terminal-topbar {
-      background: #171e17;
-      border-bottom: 1px solid #243024;
+      background: #151b15;
+      border-bottom: 1px solid #222d22;
       padding: 12px 18px;
       display: flex;
       align-items: center;
@@ -341,7 +385,7 @@
       width: 11px;
       height: 11px;
       border-radius: 50%;
-      background: #2b3a2b;
+      background: #283628;
     }
     .w-dot.active-dot {
       background: #00A800;
@@ -351,37 +395,43 @@
     .terminal-title {
       font-family: var(--mono);
       font-size: 0.8rem;
-      color: #8fa58f;
+      color: #92a992;
       font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .terminal-replay {
-      background: rgba(0, 168, 0, 0.15);
-      border: 1px solid rgba(0, 168, 0, 0.3);
-      color: #38df38;
-      font-family: var(--mono);
-      font-size: 0.78rem;
-      cursor: pointer;
-      padding: 4px 10px;
-      border-radius: 6px;
+    .live-status {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      transition: all 0.15s;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #00A800;
+      background: rgba(0, 168, 0, 0.12);
+      border: 1px solid rgba(0, 168, 0, 0.3);
+      padding: 3px 9px;
+      border-radius: 999px;
     }
 
-    .terminal-replay:hover {
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
       background: #00A800;
-      color: #ffffff;
-      border-color: #00A800;
+      box-shadow: 0 0 6px #00A800;
+      animation: pulse 1.8s infinite;
     }
 
     .terminal-screen {
-      padding: 26px;
+      padding: 26px 28px;
       font-family: var(--mono);
       font-size: 0.92rem;
-      line-height: 1.65;
-      min-height: 330px;
+      line-height: 1.7;
+      min-height: 350px;
       color: #d1eed1;
       white-space: pre-wrap;
       overflow-x: auto;
@@ -397,8 +447,14 @@
       font-weight: 600;
     }
 
-    .term-scan {
-      color: #718a71;
+    .term-badge {
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .term-exec {
+      color: #fbbf24;
+      font-weight: 500;
     }
 
     .term-file {
@@ -412,11 +468,12 @@
     }
 
     .term-warn {
-      color: #facc15;
+      color: #fbbf24;
+      font-weight: 600;
     }
 
     .term-dim {
-      color: #6a886a;
+      color: #718d71;
     }
 
     .term-cursor {
@@ -479,7 +536,7 @@
       border-radius: 14px;
       padding: 26px;
       transition: all 0.2s;
-      box-shadow: 0 4px 20px -2px rgba(80, 60, 20, 0.06);
+      box-shadow: 0 4px 20px -2px rgba(70, 50, 20, 0.05);
     }
 
     .step-box:hover {
@@ -502,7 +559,7 @@
       font-size: 1.15rem;
       font-weight: 700;
       margin-bottom: 8px;
-      color: #141a14;
+      color: #121812;
     }
 
     .step-detail {
@@ -514,8 +571,8 @@
     }
 
     .step-codebox {
-      background: #141914;
-      border: 1px solid #232c23;
+      background: #121712;
+      border: 1px solid #243024;
       border-radius: 8px;
       padding: 10px 14px;
       font-family: var(--mono);
@@ -574,7 +631,7 @@
       text-decoration: none;
       color: var(--text);
       transition: all 0.2s;
-      box-shadow: 0 4px 20px -2px rgba(80, 60, 20, 0.06);
+      box-shadow: 0 4px 20px -2px rgba(70, 50, 20, 0.05);
     }
 
     .resource-link:hover {
@@ -609,7 +666,7 @@
       font-size: 1.05rem;
       font-weight: 700;
       margin-bottom: 2px;
-      color: #141a14;
+      color: #121812;
     }
 
     .resource-meta span {
@@ -678,7 +735,7 @@
     }
 
     .footer-right a {
-      color: var(--primary);
+      color: var(--primary-dark);
       text-decoration: none;
       font-weight: 700;
       transition: color 0.15s;
@@ -693,10 +750,10 @@
 <body>
   <!-- Soft Blurred #F4E3BB Background Depth Canvas -->
   <div class="blur-canvas">
-    <div class="blur-layer blur-1"></div>
-    <div class="blur-layer blur-2"></div>
-    <div class="blur-layer blur-3"></div>
-    <div class="blur-layer blur-4"></div>
+    <div class="blur-layer blur-top"></div>
+    <div class="blur-layer blur-left"></div>
+    <div class="blur-layer blur-right"></div>
+    <div class="blur-layer blur-bottom"></div>
   </div>
 
   <!-- Header -->
@@ -710,6 +767,7 @@
         </a>
 
         <div class="header-nav">
+          <a href="#quickstart" class="header-link">Guide</a>
           <a href="https://github.com/indrasuthar07/Cmdora" target="_blank" rel="noopener" class="header-link">
             <svg class="svg-icon" style="width: 18px; height: 18px;" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
             GitHub
@@ -724,29 +782,37 @@
   </header>
 
   <main class="container">
-    <!-- Hero Section -->
+    <!-- Human & Premium Hero Section -->
     <section class="hero">
-      <div class="hero-tag">
-        <span class="hero-tag-dot"></span>
-        Gemini 3.1 Flash-Lite Engine
+      <div class="hero-eyebrow">
+        <span></span> Cmdora &middot; PowerShell &amp; Git Copilot
       </div>
-      <h1>Natural Language to <span class="text-primary">PowerShell</span></h1>
+      <h1>Natural language for <br><span class="text-primary">PowerShell &amp; Git</span></h1>
       <p class="hero-desc">
-        Command your terminal and Git workflows in plain English. Guaranteed workspace containment, instant deterministic file operations, and strict safety validation.
+        Describe what you want to achieve in plain English. Cmdora verifies the safety boundaries, plans the exact commands, and executes them with full workspace containment.
       </p>
 
-      <!-- Clean Install Command Box -->
-      <div class="install-box">
-        <span class="install-prefix">$</span>
-        <code class="install-code" id="main-install-cmd">pip install cmdora</code>
-        <button class="copy-button" onclick="copyMainInstall()">
-          <svg class="svg-icon" style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-          <span id="main-copy-label">Copy</span>
-        </button>
+      <!-- Clean Action Area -->
+      <div class="hero-actions">
+        <div class="install-bar">
+          <span class="prompt-sym">$</span>
+          <code id="main-install-cmd">pip install cmdora</code>
+          <button class="copy-btn" onclick="copyMainInstall()">
+            <svg class="svg-icon" style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            <span id="main-copy-label">Copy</span>
+          </button>
+        </div>
+        <a href="#quickstart" class="hero-secondary-btn">
+          Explore Guide &darr;
+        </a>
+      </div>
+
+      <div class="hero-meta">
+        Windows PowerShell &middot; Python 3.12+ &middot; Powered by Gemini 3.1 Flash-Lite
       </div>
     </section>
 
-    <!-- Single Clean Terminal Demo (Pure Professional Terminal) -->
+    <!-- Handcrafted Studio Terminal Window (Looping Forever) -->
     <div class="terminal-container">
       <div class="terminal-topbar">
         <div class="terminal-left">
@@ -755,30 +821,32 @@
             <div class="w-dot"></div>
             <div class="w-dot active-dot"></div>
           </div>
-          <span class="terminal-title">powershell — cmdora</span>
+          <span class="terminal-title">
+            <span>powershell.exe</span> &mdash; <span>cmdora</span>
+          </span>
         </div>
-        <button class="terminal-replay" onclick="startTerminalPlayback()">
-          <svg class="svg-icon" style="width: 13px; height: 13px;" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-          replay
-        </button>
+        <div class="live-status">
+          <span class="live-dot"></span>
+          <span>LIVE PREVIEW</span>
+        </div>
       </div>
       <div class="terminal-screen" id="term-display">
-        <!-- Live typing simulation dynamically injected -->
+        <!-- Interactive typing and infinite looping terminal output rendered via JS -->
       </div>
     </div>
 
     <!-- 3 Clean Minimal Quickstart Steps -->
-    <section class="steps-section">
+    <section class="steps-section" id="quickstart">
       <div class="section-headline">
         <h2>Quickstart</h2>
-        <p>Three clean steps to integrate into your daily workflow.</p>
+        <p>Three clean steps to integrate into your terminal workflow.</p>
       </div>
 
       <div class="steps-wrapper">
         <div class="step-box">
           <div class="step-index">01 &mdash; INSTALL</div>
           <h3 class="step-heading">Install Cmdora</h3>
-          <p class="step-detail">Available on PyPI with clean Windows PowerShell bindings.</p>
+          <p class="step-detail">Available on PyPI with clean Windows PowerShell integration.</p>
           <div class="step-codebox">
             <code>pip install cmdora</code>
             <button class="step-copy-btn" onclick="copySnippetText('pip install cmdora', this)">copy</button>
@@ -788,7 +856,7 @@
         <div class="step-box">
           <div class="step-index">02 &mdash; ONBOARD</div>
           <h3 class="step-heading">Configure API Key</h3>
-          <p class="step-detail">Saves to system AppData without writing secrets to your project.</p>
+          <p class="step-detail">Saves to system AppData without writing secrets to your repository.</p>
           <div class="step-codebox">
             <code>cmdora config set-key</code>
             <button class="step-copy-btn" onclick="copySnippetText('cmdora config set-key', this)">copy</button>
@@ -798,7 +866,7 @@
         <div class="step-box">
           <div class="step-index">03 &mdash; EXECUTE</div>
           <h3 class="step-heading">Run Any Task</h3>
-          <p class="step-detail">Cmdora translates your intent, verifies safety, and runs the command.</p>
+          <p class="step-detail">Cmdora translates your intent, verifies safety policy, and executes.</p>
           <div class="step-codebox">
             <code>cmdora "list all python files"</code>
             <button class="step-copy-btn" onclick="copySnippetText('cmdora \"list all python files\"', this)">copy</button>
@@ -861,7 +929,7 @@
     function copyMainInstall() {
       const text = document.getElementById('main-install-cmd').innerText;
       navigator.clipboard.writeText(text).then(() => {
-        const btn = document.querySelector('.copy-button');
+        const btn = document.querySelector('.copy-btn');
         const label = document.getElementById('main-copy-label');
         btn.classList.add('active');
         label.innerText = 'Copied!';
@@ -884,28 +952,28 @@
       });
     }
 
-    // Single Clean Terminal Recording Simulation
+    // Realistic Terminal Execution Sequence (Replays Forever)
     const sequence = [
-      { type: "prompt", text: "PS C:\\Projects\\Cmdora> " },
+      { type: "prompt", text: "PS C:\\workspace\\cmdora> " },
       { type: "type", text: 'cmdora "list all python files"' },
       { type: "newline" },
-      { type: "output", class: "term-scan", text: "Scanning workspace...\n", delay: 220 },
-      { type: "output", class: "term-file", text: "src\\cmdora\\cli\\main.py\n", delay: 80 },
-      { type: "output", class: "term-file", text: "src\\cmdora\\executor\\powershell.py\n", delay: 70 },
-      { type: "output", class: "term-file", text: "src\\cmdora\\llm\\gemini.py\n", delay: 70 },
-      { type: "output", class: "term-file", text: "src\\cmdora\\safety\\policy.py\n", delay: 70 },
-      { type: "output", class: "term-file", text: "tests\\unit\\test_cli.py\n", delay: 70 },
-      { type: "output", class: "term-file", text: "tests\\unit\\test_gemini_planner.py\n\n", delay: 90 },
-      { type: "output", class: "term-success", text: "✓ Found 42 python files in 0.18s\n\n", delay: 250 },
+      { type: "output", class: "term-badge", text: "⚡ Intent: Find and list Python source files in repository\n", delay: 240 },
+      { type: "output", class: "term-exec", text: "↳ Executing: Get-ChildItem -Path . -Filter \"*.py\" -Recurse\n\n", delay: 180 },
+      { type: "output", class: "term-file", text: "  • src\\cmdora\\cli\\main.py\n", delay: 75 },
+      { type: "output", class: "term-file", text: "  • src\\cmdora\\executor\\powershell.py\n", delay: 65 },
+      { type: "output", class: "term-file", text: "  • src\\cmdora\\llm\\gemini.py\n", delay: 65 },
+      { type: "output", class: "term-file", text: "  • src\\cmdora\\safety\\policy.py\n", delay: 65 },
+      { type: "output", class: "term-file", text: "  • tests\\unit\\test_cli.py\n", delay: 65 },
+      { type: "output", class: "term-file", text: "  • tests\\unit\\test_gemini_planner.py\n\n", delay: 85 },
+      { type: "output", class: "term-success", text: "✔ Scan complete: 42 Python files located in 0.18s\n\n", delay: 350 },
       
-      { type: "prompt", text: "PS C:\\Projects\\Cmdora> ", delay: 600 },
-      { type: "type", text: 'cmdora "check git status and recent commit" --dry-run' },
+      { type: "prompt", text: "PS C:\\workspace\\cmdora> ", delay: 700 },
+      { type: "type", text: 'cmdora "undo last commit without losing changes" --dry-run' },
       { type: "newline" },
-      { type: "output", class: "term-warn", text: "Dry run only — no command executed.\n\n", delay: 200 },
-      { type: "output", class: "term-dim", text: "Proposed command:\n", delay: 100 },
-      { type: "output", class: "term-cmd", text: "git status -sb ; git log -n 1 --oneline\n\n", delay: 150 },
-      { type: "output", class: "term-dim", text: "Safety assessment:\n", delay: 100 },
-      { type: "output", class: "term-file", text: "Policy: SAFE_READONLY | Effect: Inspects working tree without modification.\n", delay: 200 }
+      { type: "output", class: "term-warn", text: "🛡️ Safety Policy: REQUIRE_APPROVAL\n", delay: 200 },
+      { type: "output", class: "term-dim", text: "↳ Dry-Run inspection active — no state modified:\n\n", delay: 120 },
+      { type: "output", class: "term-cmd", text: "  git reset --soft HEAD~1\n\n", delay: 150 },
+      { type: "output", class: "term-dim", text: "↳ Anticipated Effect: Rewinds commit by 1 revision while preserving staged working tree edits.\n", delay: 200 }
     ];
 
     let playbackTimeouts = [];
@@ -923,7 +991,14 @@
       let seqIndex = 0;
 
       function executeNext() {
-        if (seqIndex >= sequence.length) return;
+        // When sequence finishes, pause 3.5s gracefully, then replay forever!
+        if (seqIndex >= sequence.length) {
+          const replayTimer = setTimeout(() => {
+            startTerminalPlayback();
+          }, 3500);
+          playbackTimeouts.push(replayTimer);
+          return;
+        }
 
         const item = sequence[seqIndex++];
 
@@ -952,11 +1027,12 @@
           function typeChar() {
             if (charIdx < text.length) {
               activeTarget.textContent += text[charIdx++];
-              const delay = 22 + Math.random() * 25;
+              // Natural human typing rhythm
+              const delay = 20 + Math.random() * 25;
               const t = setTimeout(typeChar, delay);
               playbackTimeouts.push(t);
             } else {
-              const t = setTimeout(executeNext, 180);
+              const t = setTimeout(executeNext, 200);
               playbackTimeouts.push(t);
             }
           }
