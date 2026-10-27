@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cmdora — The Natural-Language PowerShell & Git Assistant</title>
+  <meta name="description" content="Cmdora translates natural language into safe, executable PowerShell and Git commands powered by Gemini 3.1 Flash-Lite.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --bg-subtle: #121215;
+      --card-bg: #18181b;
+      --card-border: #27272a;
+      --card-border-hover: #3f3f46;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --green: #4ade80;
+      --amber: #fbbf24;
+      --purple: #c084fc;
+      --terminal-bg: #0d0d11;
+      --terminal-border: #27272a;
+      --code-bg: #1e1e24;
+      --radius: 12px;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'Geist Mono', 'Consolas', 'Courier New', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background grid */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 48px 48px, 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Navigation */
+    header {
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 64px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #09090b;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+
+    .nav-link:hover {
+      color: var(--text-main);
+    }
+
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .nav-btn:hover {
+      border-color: var(--card-border-hover);
+      background: #202025;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: var(--accent);
+      padding: 4px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-pill span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.4rem, 5vw, 3.8rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      max-width: 820px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      margin: 0 auto 36px;
+      font-weight: 400;
+    }
+
+    /* Install bar */
+    .install-bar {
+      display: inline-flex;
+      align-items: center;
+      background: var(--terminal-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 6px 6px 6px 16px;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      margin-bottom: 40px;
+      max-width: 100%;
+    }
+
+    .install-bar .prompt-sym {
+      color: var(--text-dim);
+      margin-right: 10px;
+      user-select: none;
+    }
+
+    .install-bar code {
+      color: var(--text-main);
+      margin-right: 16px;
+    }
+
+    .copy-btn {
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #3f3f46;
+    }
+
+    .copy-btn.copied {
+      background: rgba(74, 222, 128, 0.15);
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    /* Terminal Demo Component */
+    .demo-wrapper {
+      max-width: 860px;
+      margin: 0 auto 100px;
+      background: var(--terminal-bg);
+      border: 1px solid var(--terminal-border);
+      border-radius: var(--radius);
+      box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .terminal-header {
+      background: #141418;
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      user-select: none;
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #eab308; }
+    .dot-green { background: #22c55e; }
+
+    .terminal-tabs {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+    }
+
+    .term-tab {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .term-tab:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .term-tab.active {
+      color: var(--text-main);
+      background: var(--card-bg);
+      border-color: var(--card-border);
+      font-weight: 500;
+    }
+
+    .terminal-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .term-replay-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.15s;
+    }
+
+    .term-replay-btn:hover {
+      color: var(--text-main);
+    }
+
+    .terminal-body {
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      min-height: 320px;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
+    .terminal-line {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .cmd-prompt {
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .cmd-text {
+      color: #f8fafc;
+      font-weight: 500;
+    }
+
+    .out-info { color: #94a3b8; }
+    .out-success { color: #4ade80; }
+    .out-warn { color: #fbbf24; }
+    .out-accent { color: #38bdf8; }
+    .out-dim { color: #64748b; }
+
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 15px;
+      background: #38bdf8;
+      vertical-align: middle;
+      animation: blink 1s infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    /* Section Headers */
+    .section-title {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      text-align: center;
+      max-width: 580px;
+      margin: 0 auto 50px;
+      font-size: 1rem;
+    }
+
+    /* Quickstart Steps */
+    .steps-section {
+      padding: 40px 0 80px;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+
+    .step-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 28px;
+      position: relative;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .step-card:hover {
+      border-color: var(--card-border-hover);
+      transform: translateY(-2px);
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+
+    .step-card h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+
+    .step-card p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+
+    .step-code {
+      background: var(--terminal-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-main);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mini-copy {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      transition: color 0.15s;
+    }
+
+    .mini-copy:hover {
+      color: var(--text-main);
+    }
+
+    /* Features Grid */
+    .features-section {
+      padding: 40px 0 80px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 26px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--card-border-hover);
+      background: #1c1c20;
+    }
+
+    .feature-icon {
+      font-size: 1.4rem;
+      margin-bottom: 14px;
+      display: inline-block;
+    }
+
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    /* Comparison / Dry Run Banner */
+    .dry-run-callout {
+      background: linear-gradient(180deg, #18181b 0%, #121215 100%);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 36px;
+      margin: 30px 0 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .dry-run-callout {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+
+    .dry-run-info {
+      max-width: 580px;
+    }
+
+    .dry-run-info h3 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .dry-run-info p {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+    }
+
+    .dry-run-pill {
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.25);
+      color: var(--amber);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 48px 0;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    @media (min-width: 640px) {
+      .footer-inner {
+        flex-direction: row;
+      }
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+    }
+
+    .footer-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-main);
+    }
+
+    /* SVG icons */
+    .icon {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+      display: inline-block;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="container nav-inner">
+      <a href="#" class="brand">
+        <div class="brand-icon">&gt;_</div>
+        Cmdora
+      </a>
+      <div class="nav-links">
+        <a href="#quickstart" class="nav-link">Quickstart</a>
+        <a href="#features" class="nav-link">Features</a>
+        <a href="https://pypi.org/project/cmdora/" target="_blank" rel="noopener" class="nav-link">PyPI</a>
+        <a href="https://github.com/indrasuthar07/Cmdora" target="_blank" rel="noopener" class="nav-btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="badge-pill">
+        <span></span> v0.1.1 Released &middot; Gemini 3.1 Flash-Lite
+      </div>
+      <h1>The Natural-Language <span>PowerShell & Git Copilot</span></h1>
+      <p class="hero-sub">
+        Tell Cmdora what you want in plain English. It understands your repository context, plans safe commands, and executes them with safety guardrails.
+      </p>
+
+      <!-- Instant Install Bar -->
+      <div class="install-bar">
+        <span class="prompt-sym">$</span>
+        <code id="install-cmd">pip install cmdora</code>
+        <button class="copy-btn" onclick="copyInstallCmd()">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          <span id="copy-btn-text">Copy</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Interactive Terminal Simulator (Video/Demo Type) -->
+    <section class="demo-wrapper">
+      <div class="terminal-header">
+        <div class="terminal-dots">
+          <div class="dot dot-red"></div>
+          <div class="dot dot-yellow"></div>
+          <div class="dot dot-green"></div>
+        </div>
+        <div class="terminal-tabs">
+          <button class="term-tab active" onclick="switchTab(0)">1. Instant Execution</button>
+          <button class="term-tab" onclick="switchTab(1)">2. Dry-Run Safety</button>
+          <button class="term-tab" onclick="switchTab(2)">3. Git Operations</button>
+          <button class="term-tab" onclick="switchTab(3)">4. API Key Setup</button>
+        </div>
+        <div class="terminal-actions">
+          <button class="term-replay-btn" onclick="replayCurrentScenario()">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+            Replay
+          </button>
+        </div>
+      </div>
+      <div class="terminal-body" id="term-content">
+        <!-- Interactive typing output rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Quickstart Steps -->
+    <section class="steps-section" id="quickstart">
+      <h2 class="section-title">Get Started in 30 Seconds</h2>
+      <p class="section-desc">Zero manual configuration files in your repository. Set up once globally and run from anywhere.</p>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <h3>Install Package</h3>
+          <p>Install Cmdora directly from PyPI via pip or uv.</p>
+          <div class="step-code">
+            <code>pip install cmdora</code>
+            <button class="mini-copy" onclick="copySnippet('pip install cmdora')">Copy</button>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <h3>Configure Gemini API Key</h3>
+          <p>Securely save your key to user AppData without touching repo files.</p>
+          <div class="step-code">
+            <code>cmdora config set-key</code>
+            <button class="mini-copy" onclick="copySnippet('cmdora config set-key')">Copy</button>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <h3>Run Natural Language Tasks</h3>
+          <p>Give instructions in plain English. Cmdora plans and executes safely.</p>
+          <div class="step-code">
+            <code>cmdora "list all python files"</code>
+            <button class="mini-copy" onclick="copySnippet('cmdora \"list all python files\"')">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section" id="features">
+      <h2 class="section-title">Engineered for Safety and Speed</h2>
+      <p class="section-desc">Designed specifically for Windows developers working with PowerShell and Git workflows.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Sub-second Deterministic Engine</h3>
+          <p>Common file searches, project status checks, and Git queries run in &lt;0.2s locally without waiting for LLM roundtrips.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3>Destructive Command Blocker</h3>
+          <p>Strict policy rules block irreversible actions such as <code>rm -rf</code>, <code>Format-Volume</code>, system directory mutations, and recursive file deletions.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>Inspect Before Running</h3>
+          <p>Use <code>--dry-run</code> on any command to preview the exact PowerShell script and its anticipated effect before making any modifications.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>Gemini 3.1 Flash-Lite Core</h3>
+          <p>Powered by the ultra-fast and lightweight Gemini 3.1 Flash-Lite model for concise, accurate command planning with low latency.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔐</div>
+          <h3>Workspace Containment</h3>
+          <p>Path safety boundary ensures commands cannot traverse into system directories or tamper with parent files outside the current project.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📋</div>
+          <h3>Full Audit Trail</h3>
+          <p>Every planned task, user approval, and executed PowerShell output is recorded in a tamper-resistant local audit log for accountability.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dry-run Callout -->
+    <div class="dry-run-callout">
+      <div class="dry-run-info">
+        <div class="dry-run-pill">--dry-run Safety Guarantee</div>
+        <h3>Verify any proposed action with zero side-effects</h3>
+        <p>Worried about an AI modifying your working tree? Add <code>--dry-run</code> to inspect the full plan, anticipated effects, and safety tier before committing to execution.</p>
+      </div>
+      <div>
+        <a href="https://github.com/indrasuthar07/Cmdora#safety-policy--guardrails" target="_blank" rel="noopener" class="nav-btn" style="padding: 10px 18px; font-size: 0.95rem;">
+          View Safety Spec &rarr;
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <div>
+        <strong>Cmdora</strong> &mdash; Released under MIT License.
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/indrasuthar07/Cmdora" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://pypi.org/project/cmdora/" target="_blank" rel="noopener">PyPI</a>
+        <a href="https://github.com/indrasuthar07/Cmdora/issues" target="_blank" rel="noopener">Report Issue</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Copy command functionality
+    function copyInstallCmd() {
+      const text = document.getElementById('install-cmd').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        const btnText = document.getElementById('copy-btn-text');
+        btn.classList.add('copied');
+        btnText.innerText = 'Copied!';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btnText.innerText = 'Copy';
+        }, 2000);
+      });
+    }
+
+    function copySnippet(text) {
+      navigator.clipboard.writeText(text);
+    }
+
+    // Terminal Scenarios Simulation
+    const scenarios = [
+      {
+        title: "Instant Execution",
+        command: 'cmdora "list all python files"',
+        steps: [
+          { text: "Scanning workspace...\n", class: "out-dim", delay: 200 },
+          { text: "src\\cmdora\\__init__.py\n", class: "out-info", delay: 100 },
+          { text: "src\\cmdora\\cli\\main.py\n", class: "out-info", delay: 80 },
+          { text: "src\\cmdora\\llm\\gemini.py\n", class: "out-info", delay: 80 },
+          { text: "src\\cmdora\\executor\\powershell.py\n", class: "out-info", delay: 80 },
+          { text: "src\\cmdora\\safety\\policy.py\n", class: "out-info", delay: 80 },
+          { text: "tests\\unit\\test_cli.py\n", class: "out-info", delay: 80 },
+          { text: "tests\\unit\\test_gemini_planner.py\n\n", class: "out-info", delay: 100 },
+          { text: "Found 42 matching files in 0.18s.\n", class: "out-success", delay: 150 }
+        ]
+      },
+      {
+        title: "Dry-Run Safety",
+        command: 'cmdora "remove old build caches in temp" --dry-run',
+        steps: [
+          { text: "Dry run only — no command executed.\n\n", class: "out-warn", delay: 300 },
+          { text: "Proposed command:\n", class: "out-dim", delay: 150 },
+          { text: "Remove-Item -Path .\\.cache\\* -Recurse -Force\n\n", class: "out-accent", delay: 200 },
+          { text: "Safety assessment:\n", class: "out-dim", delay: 150 },
+          { text: "Policy: REQUIRE_APPROVAL\n", class: "out-warn", delay: 100 },
+          { text: "Target: Workspace-contained directory\n", class: "out-info", delay: 100 },
+          { text: "Effect: Deletes temporary build cache files without touching source code.\n", class: "out-info", delay: 200 }
+        ]
+      },
+      {
+        title: "Git Operations",
+        command: 'cmdora "show uncommitted changes and branch status"',
+        steps: [
+          { text: "Running git status and branch inspection...\n\n", class: "out-dim", delay: 250 },
+          { text: "On branch: feat/publish-prep\n", class: "out-accent", delay: 120 },
+          { text: "Working tree: Clean (nothing to commit)\n", class: "out-success", delay: 120 },
+          { text: "Latest commit: [61eb01f] chore: update uv.lock for 0.1.1\n", class: "out-info", delay: 120 },
+          { text: "Remote status: Ready to push to origin\n", class: "out-info", delay: 150 }
+        ]
+      },
+      {
+        title: "API Key Setup",
+        command: 'cmdora config set-key',
+        steps: [
+          { text: "Enter your Gemini API key: ****************************************\n", class: "out-dim", delay: 500 },
+          { text: "Saved GEMINI_API_KEY to C:\\Users\\user\\AppData\\Roaming\\CmdoraAI\\.env\n", class: "out-success", delay: 300 },
+          { text: "Model configured: gemini-3.1-flash-lite\n", class: "out-info", delay: 200 },
+          { text: "Setup complete! You can now run natural-language commands anywhere.\n", class: "out-accent", delay: 250 }
+        ]
+      }
+    ];
+
+    let currentTab = 0;
+    let animationTimeouts = [];
+
+    function clearTimeouts() {
+      animationTimeouts.forEach(t => clearTimeout(t));
+      animationTimeouts = [];
+    }
+
+    function switchTab(index) {
+      currentTab = index;
+      document.querySelectorAll('.term-tab').forEach((tab, i) => {
+        tab.classList.toggle('active', i === index);
+      });
+      playScenario(scenarios[index]);
+    }
+
+    function replayCurrentScenario() {
+      playScenario(scenarios[currentTab]);
+    }
+
+    function playScenario(scenario) {
+      clearTimeouts();
+      const term = document.getElementById('term-content');
+      term.innerHTML = `<span class="cmd-prompt">PS C:\\Projects\\Cmdora&gt; </span><span class="cmd-text" id="typing-cmd"></span><span class="cursor" id="term-cursor"></span>\n\n<div id="term-output"></div>`;
+
+      const typingEl = document.getElementById('typing-cmd');
+      const outputEl = document.getElementById('term-output');
+      const cmdText = scenario.command;
+      let charIndex = 0;
+
+      function typeChar() {
+        if (charIndex < cmdText.length) {
+          typingEl.textContent += cmdText[charIndex];
+          charIndex++;
+          const t = setTimeout(typeChar, 25 + Math.random() * 20);
+          animationTimeouts.push(t);
+        } else {
+          // Finished typing command, start showing outputs
+          let stepIndex = 0;
+          function showStep() {
+            if (stepIndex < scenario.steps.length) {
+              const step = scenario.steps[stepIndex];
+              const span = document.createElement('span');
+              span.className = step.class;
+              span.textContent = step.text;
+              outputEl.appendChild(span);
+              stepIndex++;
+              const t = setTimeout(showStep, step.delay);
+              animationTimeouts.push(t);
+            }
+          }
+          const t = setTimeout(showStep, 200);
+          animationTimeouts.push(t);
+        }
+      }
+
+      const t = setTimeout(typeChar, 150);
+      animationTimeouts.push(t);
+    }
+
+    // Auto-start on load
+    window.addEventListener('DOMContentLoaded', () => {
+      switchTab(0);
+    });
+  </script>
+</body>
+</html>
