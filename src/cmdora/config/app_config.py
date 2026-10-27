@@ -77,7 +77,14 @@ class ApplicationConfigStore:
 
         try:
             raw_config = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
-            return ApplicationConfig.model_validate(raw_config)
+            config = ApplicationConfig.model_validate(raw_config)
+            if config.model == "gemini-3.8-flash":
+                config = config.model_copy(update={"model": "gemini-3.1-flash-lite"})
+                try:
+                    self.save(config)
+                except Exception:
+                    pass
+            return config
         except (OSError, UnicodeError, tomllib.TOMLDecodeError, ValidationError) as error:
             raise ConfigError(
                 f"Could not load configuration at {self.config_path}: {error}"
