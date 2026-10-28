@@ -1,14 +1,16 @@
 # Cmdora
 
-Describe what you want to do in plain English. Cmdora figures out the right command, runs it, and shows you the result.
+Built this because I kept forgetting exact PowerShell and Git flags, wasting time on syntax I already knew conceptually. Cmdora lets you just say what you mean - it figures out the command, runs it, and shows you the result.
 
 ```powershell
-cmdora "list all python files"
-cmdora "git status"
-cmdora "commit my changes with message fix navbar bug"
+cmdora "list all python files in src"
+cmdora "show the files modified today"
+cmdora "commit my changes with message refactor auth module"
 ```
 
-No memorizing flags. No copy-pasting from Stack Overflow. Just tell it what you need.
+That's the whole idea. No mode-switching, no config files to learn, no prompt engineering. Just describe the task.
+
+**→ [cmdora-ai.vercel.app](https://cmdora-ai.vercel.app)** - see a walkthrough, and install guide if you want to check it out before installing.
 
 ---
 
@@ -18,87 +20,88 @@ No memorizing flags. No copy-pasting from Stack Overflow. Just tell it what you 
 pip install cmdora
 ```
 
-Then set your Gemini API key once:
+Then add your Gemini API key (free tier is enough):
 
 ```powershell
 cmdora config set-key
 ```
 
-You'll be prompted to paste your key. It gets saved to `%APPDATA%\CmdoraAI\.env` — you only do this once, and it works from any folder after that.
+It'll prompt you to paste the key. Saves it once to `%APPDATA%\CmdoraAI\.env` and that's it -works from any folder from that point on. You can get a free key at [aistudio.google.com](https://aistudio.google.com/app/apikey) if you don't have one yet.
 
 ---
 
-## How it works
+## What it actually does
 
-Cmdora takes your plain-English request, builds a safe execution plan using Gemini, validates it against a strict schema, checks it against a local policy (allowlist, path constraints, no secrets, no destructive ops), and only then runs it. Every action is logged to a local SQLite file — nothing is sent anywhere except what's needed for planning.
+When you type a request, Cmdora first checks if it matches a built-in deterministic workflow (things like `git status`, listing files, creating a file). If it does, it runs that directly - no API call needed.
 
-```
-your request
-    → deterministic workflow? → run it
-    → or: ask Gemini for a structured plan
-        → validate schema
-        → check local policy
-        → approval prompt (or auto if in autonomy mode)
-        → bounded PowerShell executor
-        → audit log
-```
+If it doesn't match a built-in, it asks Gemini to produce a structured execution plan. That plan gets validated against a strict schema, checked against a local policy layer, and then either runs with your approval or silently if you've enabled autonomy mode.
+
+Nothing fancy goes to Gemini. It only sees your request text, the repo name, current git state, and a list of supported action types. It never sees your file contents, `.env` values, tokens, or actual diffs. Keeping that context narrow is intentional.
+
+Every run gets logged locally to `%APPDATA%\CmdoraAI\history.db` with secrets stripped out.
 
 ---
 
-## Common commands
+## Things you can do with it
 
 ```powershell
-# file operations
+# find stuff
+cmdora "list all python files"
 cmdora "list all files modified today"
-cmdora "create src/components/Button.js"
 
-# git
+# git, without remembering the flags
 cmdora "git status"
 cmdora "push my current branch"
+cmdora "commit my changes with message fix navbar bug"
+
+# ask questions
 cmdora "what does git rebase do?"
 
-# inspect before running
+# create files
+cmdora "create src/components/Button.js"
+
+# see the plan before committing to it
 cmdora "commit my changes" --dry-run
 
-# see history
+# review what ran
 cmdora history --last 10
 ```
 
-`--dry-run` shows you exactly what would run without executing anything. Good habit before anything that writes.
+`--dry-run` is worth using the first few times. It prints exactly what would execute without actually running anything.
 
 ---
 
-## Safety
+## On safety
 
-Cmdora was built with a specific constraint in mind: an LLM should help you work, not become an unrestricted shell. So it:
+The thing that made this tricky to build was keeping the LLM useful without letting it become a general-purpose shell that can do anything it wants. Cmdora handles this with a few hard rules:
 
-- never runs arbitrary commands — everything goes through an allowlist
-- blocks deletion, force-push, encoded PowerShell, secret file access, remote downloads, and package installs by default
-- keeps Gemini's context minimal — it only sees your request, repo name, git state, and a list of supported actions; never file contents, `.env` values, or tokens
-- logs everything locally at `%APPDATA%\CmdoraAI\history.db`, with secrets redacted
+- Everything goes through an allowlist. Arbitrary commands don't run.
+- Deletion, force-push, encoded PowerShell, `.env` access, remote downloads, and package installs are blocked at the policy layer - not negotiable, not configurable.
+- Gemini never sees sensitive context. It gets the minimum needed to make a plan.
+- Every action is logged locally with secrets redacted.
 
-Autonomy mode exists if you want Cmdora to skip approval prompts for safe operations:
+If you want Cmdora to skip the approval prompt for safe operations, you can turn on autonomy mode per-repo:
 
 ```powershell
 cmdora "create src/utils/date.py" --autonomy git
 ```
 
-Even in autonomy mode, deletions, force-pushes, and protected-branch operations are still blocked.
+Even then, anything destructive or involving protected branches stays blocked.
 
 ---
 
 ## Requirements
 
-- Windows (PowerShell)
-- Python 3.12+
+- Windows with PowerShell
+- Python 3.12 or later
 - Git
-- A [Gemini API key](https://aistudio.google.com/app/apikey) (free tier works)
+- A Gemini API key - [get one free here](https://aistudio.google.com/app/apikey)
 
 ---
 
 ## Contributing
 
-Fork the repo, create a branch off `main`, and open a PR. Keep changes focused. Run the tests before pushing:
+If something's broken or you want to add a workflow, fork the repo and open a PR against `main`. Keep the change tight and add tests for anything behavioral. Run these before you push:
 
 ```powershell
 uv run pytest -q
@@ -106,7 +109,7 @@ uv run ruff check src tests scripts
 uv run mypy
 ```
 
-Don't commit `.env`, API keys, or `history.db`.
+Don't commit `.env` files, API keys, or `history.db`. The `.gitignore` covers most of this already.
 
 ---
 
