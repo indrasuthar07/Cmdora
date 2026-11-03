@@ -41,7 +41,8 @@ Nothing fancy goes to Gemini. It only sees your request text, the repo name, cur
 Every run gets logged locally to `%APPDATA%\CmdoraAI\history.db` with secrets stripped out.
 
 For the detailed component map, request lifecycle, trust boundaries, and local data flow, see 
-![alt text](cmdora-arc.jpg)
+<img width="1024" height="572" alt="cmdora" src="https://github.com/user-attachments/assets/90eddb68-bd88-4913-ae5a-e7b59bbad252" />
+
 
 ---
 
