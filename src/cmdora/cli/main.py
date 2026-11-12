@@ -159,7 +159,10 @@ def _changed_workspace_files(status_output: str) -> list[str]:
             raise ValueError("Git returned an unreadable status entry.")
         status, path = line[:2], line[3:]
         if not path or path.startswith('"'):
-            raise ValueError("Quoted Git paths require manual staging.")
+            raise ValueError(
+                "Quoted Git paths (paths with spaces or special characters) require manual "
+                "staging. Run `git add` directly, then use `cmdora commit with message <msg>`."
+            )
         if any(marker in status for marker in "DRCU"):
             raise ValueError(
                 "Rename, copy, deletion, and conflicted changes require manual Git review."
