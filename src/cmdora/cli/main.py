@@ -1383,6 +1383,12 @@ def config_set_key(
     ] = None,
 ) -> None:
     """Save your Gemini API key globally so Cmdora can plan commands anywhere."""
+    if key:
+        typer.echo(
+            "Warning: passing the key as a CLI argument may expose it in shell history. "
+            "Prefer running `cmdora config set-key` without arguments.",
+            err=True,
+        )
     api_key = key
     if not api_key:
         api_key = typer.prompt("Enter your Gemini API key", hide_input=True)
