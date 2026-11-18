@@ -1472,6 +1472,21 @@ def history(
     _display_history_records(records)
 
 
+@history_app.command("clear")
+def history_clear(
+    confirm: Annotated[bool, typer.Option("--yes", help="Skip confirmation prompt.")] = False,
+) -> None:
+    """Delete all local audit history."""
+    if not confirm:
+        typer.confirm("This will permanently delete all history. Continue?", abort=True)
+    try:
+        AuditLog().clear()
+    except AuditLogError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo("Audit history cleared.")
+
+
 @history_app.command("show")
 def history_show(request_id: str) -> None:
     """Show every audit record for one request ID."""

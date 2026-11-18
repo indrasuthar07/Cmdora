@@ -137,6 +137,17 @@ class AuditLog:
         except (OSError, sqlite3.Error) as error:
             raise AuditLogError(f"Could not read audit history at {self.path}: {error}") from error
 
+    def clear(self) -> None:
+        """Delete every audit record from the database."""
+        if not self.path.exists():
+            return
+        try:
+            with closing(sqlite3.connect(self.path, timeout=5)) as connection:
+                with connection:
+                    connection.execute("DELETE FROM audit_records")
+        except (OSError, sqlite3.Error) as error:
+            raise AuditLogError(f"Could not clear audit history at {self.path}: {error}") from error
+
     def by_request_id(self, request_id: str) -> list[dict[str, Any]]:
         """Return every command record associated with one exact request ID."""
         if not request_id.strip():
