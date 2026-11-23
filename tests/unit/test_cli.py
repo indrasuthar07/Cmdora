@@ -600,3 +600,26 @@ def test_cli_list_python_files_dry_run_shows_plan_only(
     assert "Dry run only" in result.output
     assert "Get-ChildItem" in result.output
     assert "*.py" in result.output
+
+
+# ---------------------------------------------------------------------------
+# _changed_workspace_files — quoted-path guard
+# ---------------------------------------------------------------------------
+
+import pytest
+
+from cmdora.cli.main import _changed_workspace_files
+
+
+def test_changed_workspace_files_raises_on_quoted_path() -> None:
+    """Git quotes paths that contain spaces or special characters.
+    Cmdora must reject them and ask the user to stage manually."""
+    quoted_line = ' M "path with spaces/file.py"'
+    with pytest.raises(ValueError, match="Quoted Git paths"):
+        _changed_workspace_files(quoted_line)
+
+
+def test_changed_workspace_files_raises_on_empty_path() -> None:
+    """A status line shorter than 4 characters is unreadable."""
+    with pytest.raises(ValueError, match="unreadable status entry"):
+        _changed_workspace_files(" M ")

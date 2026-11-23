@@ -159,7 +159,10 @@ def _changed_workspace_files(status_output: str) -> list[str]:
             raise ValueError("Git returned an unreadable status entry.")
         status, path = line[:2], line[3:]
         if not path or path.startswith('"'):
-            raise ValueError("Quoted Git paths require manual staging.")
+            raise ValueError(
+                "Quoted Git paths (paths with spaces or special characters) require manual "
+                "staging. Run `git add` directly, then use `cmdora commit with message <msg>`."
+            )
         if any(marker in status for marker in "DRCU"):
             raise ValueError(
                 "Rename, copy, deletion, and conflicted changes require manual Git review."
@@ -1470,6 +1473,21 @@ def history(
         console.print("No command history yet.")
         return
     _display_history_records(records)
+
+
+@history_app.command("clear")
+def history_clear(
+    confirm: Annotated[bool, typer.Option("--yes", help="Skip confirmation prompt.")] = False,
+) -> None:
+    """Delete all local audit history."""
+    if not confirm:
+        typer.confirm("This will permanently delete all history. Continue?", abort=True)
+    try:
+        AuditLog().clear()
+    except AuditLogError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo("Audit history cleared.")
 
 
 @history_app.command("show")
